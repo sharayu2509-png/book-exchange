@@ -1,0 +1,16 @@
+{
+  "users": [
+    {
+      "id": "6a75a9c1ea17c9e7f3429bfa",
+      "name": "Test Student",
+      "email": "test.student@example.com",
+      "college": "Test College",
+      "branch": "CSE",
+      "semester": "5th",
+      "phone": "9999999999",
+      "avatarUrl": "https://api.dicebear.com/7.x/thumbs/svg?seed=Test%20Student",
+      "passwordHash": "$2a$10$F5OnNI8K5xG/e39OyqrQqeyIKjVMBNpAgorsQWAi6EuU4vWbNg7SO",
+      "provider": "local"
+    }
+  ]
+}

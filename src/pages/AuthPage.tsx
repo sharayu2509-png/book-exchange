@@ -16,6 +16,7 @@ import { forwardRef, useEffect, useMemo, useState, type InputHTMLAttributes, typ
 import { useForm } from 'react-hook-form';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import type { RegistrationPayload } from '../types';
 
 interface AuthPageProps {
@@ -41,6 +42,7 @@ export const AuthPage = ({ type }: AuthPageProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useAuth();
+  const { showToast } = useToast();
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -58,11 +60,21 @@ export const AuthPage = ({ type }: AuthPageProps) => {
   const onSuccess = (message: string) => {
     setSubmitError(null);
     setSuccessMessage(message);
+    showToast({
+      title: 'Success',
+      description: message,
+      variant: 'success',
+    });
   };
 
   const onError = (message: string) => {
     setSuccessMessage(null);
     setSubmitError(message);
+    showToast({
+      title: 'Error',
+      description: message,
+      variant: 'error',
+    });
   };
 
   return (
@@ -361,10 +373,11 @@ const SignupPanel = ({ onSuccess, onError, error }: AuthPanelProps & { error: st
           placeholder="Full Name"
           autoComplete="name"
           error={formState.errors.name?.message}
-          {...register('name', {
-            required: 'Full name is required',
-            minLength: { value: 3, message: 'Enter at least 3 characters' },
-          })}
+        {...register('name', {
+          required: 'Full name is required',
+          minLength: { value: 3, message: 'Enter at least 3 characters' },
+          validate: (value) => value.trim().length >= 3 || 'Enter at least 3 characters',
+        })}
         />
         <AuthField
           icon={<Mail size={16} />}
@@ -387,13 +400,19 @@ const SignupPanel = ({ onSuccess, onError, error }: AuthPanelProps & { error: st
           icon={<GraduationCap size={16} />}
           placeholder="College Name"
           error={formState.errors.college?.message}
-          {...register('college', { required: 'College name is required' })}
+        {...register('college', {
+          required: 'College name is required',
+          validate: (value) => value.trim().length >= 2 || 'College name is required',
+        })}
         />
         <AuthField
           icon={<GraduationCap size={16} />}
           placeholder="Branch"
           error={formState.errors.branch?.message}
-          {...register('branch', { required: 'Branch is required' })}
+        {...register('branch', {
+          required: 'Branch is required',
+          validate: (value) => value.trim().length >= 2 || 'Branch is required',
+        })}
         />
       </div>
 
@@ -402,7 +421,10 @@ const SignupPanel = ({ onSuccess, onError, error }: AuthPanelProps & { error: st
           icon={<BookOpen size={16} />}
           placeholder="Semester"
           error={formState.errors.semester?.message}
-          {...register('semester', { required: 'Semester is required' })}
+        {...register('semester', {
+          required: 'Semester is required',
+          validate: (value) => value.trim().length >= 1 || 'Semester is required',
+        })}
         />
         <AuthField
           icon={<Smartphone size={16} />}
@@ -416,6 +438,7 @@ const SignupPanel = ({ onSuccess, onError, error }: AuthPanelProps & { error: st
               value: /^\d{10}$/,
               message: 'Enter a valid 10-digit mobile number',
             },
+            validate: (value) => value.trim().length === 10 || 'Enter a valid 10-digit mobile number',
           })}
         />
       </div>
@@ -489,6 +512,8 @@ const AuthField = forwardRef<HTMLInputElement, AuthFieldProps>(function AuthFiel
           ref={ref}
           {...props}
           className="w-full bg-transparent text-sm outline-none placeholder:text-subtext/70"
+          aria-label={props['aria-label'] ?? (typeof props.placeholder === 'string' ? props.placeholder : 'Field')}
+          aria-invalid={Boolean(error)}
         />
         {trailing}
       </div>

@@ -1,29 +1,39 @@
 import { motion } from 'framer-motion';
-import { CheckCircle2, CreditCard, MapPinned, PackageCheck } from 'lucide-react';
-import { useEffect, useMemo, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { CheckCircle2, CreditCard, MapPinned, PackageCheck, XCircle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
 import { CartSummary } from '../../components/cart/CartSummary';
 import { EmptyState } from '../../components/EmptyState';
+import { FormField } from '../../components/ui/FormInput';
+import { LoadingButton } from '../../components/ui/LoadingButton';
+import { Modal } from '../../components/ui/Modal';
 import { useAuth } from '../../contexts/AuthContext';
 import { useMarketplace } from '../../contexts/MarketplaceContext';
-import type { Book, OrderAddress, PaymentMethod } from '../../types';
+import { useToast } from '../../contexts/ToastContext';
+import type { Book, PaymentMethod } from '../../types';
+import { checkoutSchema, type CheckoutSchemaValues } from '../../validation/checkout';
 
 interface CheckoutPageProps {
   books: Book[];
 }
 
-interface CheckoutFormValues extends OrderAddress {
-  paymentMethod: PaymentMethod;
-}
-
 const paymentMethods: PaymentMethod[] = ['Cash on Delivery', 'UPI', 'Credit Card', 'Debit Card', 'Net Banking'];
+
+type ResultState =
+  | { type: 'success'; title: string; description: string }
+  | { type: 'error'; title: string; description: string }
+  | null;
 
 export const CheckoutPage = ({ books }: CheckoutPageProps) => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { cartItems, createOrderFromCart, isLoading } = useMarketplace();
-  const [orderPlaced, setOrderPlaced] = useState(false);
+  const { cartItems, createOrderFromCart, clearCart, isLoading } = useMarketplace();
+  const { showToast } = useToast();
+  const successTimerRef = useRef<number | null>(null);
+  const [result, setResult] = useState<ResultState>(null);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
   const resolvedBooks = useMemo(
     () =>
@@ -41,7 +51,15 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
   const deliveryCharge = subtotal > 500 ? 0 : resolvedBooks.length > 0 ? 40 : 0;
   const total = subtotal + platformFee + deliveryCharge;
 
-  const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<CheckoutFormValues>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { isSubmitting, isValid, errors },
+  } = useForm<CheckoutSchemaValues>({
+    mode: 'onChange',
+    reValidateMode: 'onChange',
+    resolver: zodResolver(checkoutSchema),
     defaultValues: {
       name: user?.name ?? '',
       phone: user?.phone ?? '',
@@ -70,35 +88,83 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
   }, [reset, user?.college, user?.name, user?.phone]);
 
   useEffect(() => {
-    if (!orderPlaced) {
-      return;
+    return () => {
+      if (successTimerRef.current) {
+        window.clearTimeout(successTimerRef.current);
+      }
+    };
+  }, []);
+
+  const closeResult = () => {
+    setResult(null);
+    if (successTimerRef.current) {
+      window.clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
     }
+  };
 
-    const timer = window.setTimeout(() => navigate('/orders', { replace: true }), 1800);
-    return () => window.clearTimeout(timer);
-  }, [navigate, orderPlaced]);
-
-  const onSubmit = async (values: CheckoutFormValues) => {
-    if (resolvedBooks.length === 0) {
-      return;
-    }
-
-    await createOrderFromCart({
-      books: resolvedBooks.map(({ book, item }) => ({ book, quantity: item.quantity })),
-      paymentMethod: values.paymentMethod,
-      deliveryAddress: {
-        name: values.name,
-        phone: values.phone,
-        line1: values.line1,
-        line2: values.line2,
-        city: values.city,
-        state: values.state,
-        pincode: values.pincode,
-        college: values.college,
-      },
-      selectedCartItemIds: resolvedBooks.map(({ item }) => item.id),
+  const openSuccess = () => {
+    setResult({
+      type: 'success',
+      title: 'Order Placed Successfully',
+      description: 'Your order has been placed successfully.',
     });
-    setOrderPlaced(true);
+    showToast({
+      title: 'Order Placed',
+      description: 'Your order has been placed successfully.',
+      variant: 'success',
+    });
+
+    successTimerRef.current = window.setTimeout(() => {
+      closeResult();
+      navigate('/orders', { replace: true });
+    }, 3000);
+  };
+
+  const openError = (message = 'Please try again.') => {
+    setResult({
+      type: 'error',
+      title: 'Order Failed',
+      description: message,
+    });
+    showToast({
+      title: 'Order Failed',
+      description: message,
+      variant: 'error',
+    });
+  };
+
+  const onSubmit = async (values: CheckoutSchemaValues) => {
+    if (resolvedBooks.length === 0 || isSubmittingOrder) {
+      return;
+    }
+
+    setIsSubmittingOrder(true);
+
+    try {
+      await createOrderFromCart({
+        books: resolvedBooks.map(({ book, item }) => ({ book, quantity: item.quantity })),
+        paymentMethod: values.paymentMethod,
+        deliveryAddress: {
+          name: values.name,
+          phone: values.phone,
+          line1: values.line1,
+          line2: values.line2,
+          city: values.city,
+          state: values.state,
+          pincode: values.pincode,
+          college: values.college,
+        },
+        selectedCartItemIds: resolvedBooks.map(({ item }) => item.id),
+      });
+
+      await clearCart();
+      openSuccess();
+    } catch (error) {
+      openError(error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setIsSubmittingOrder(false);
+    }
   };
 
   if (isLoading) {
@@ -115,7 +181,7 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
     );
   }
 
-  if (!orderPlaced && resolvedBooks.length === 0) {
+  if (resolvedBooks.length === 0) {
     return (
       <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
         <EmptyState
@@ -129,39 +195,6 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
             </div>
           }
         />
-      </div>
-    );
-  }
-
-  if (orderPlaced) {
-    return (
-      <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.94, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="w-full rounded-[32px] border border-border bg-white p-8 text-center shadow-soft"
-        >
-          <motion.div
-            initial={{ scale: 0.8 }}
-            animate={{ scale: [0.8, 1.04, 1] }}
-            transition={{ duration: 0.5 }}
-            className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"
-          >
-            <CheckCircle2 size={44} />
-          </motion.div>
-          <h1 className="mt-5 text-3xl font-semibold text-text">Order placed successfully</h1>
-          <p className="mt-3 text-sm leading-7 text-subtext">
-            Your books are now on the way. Redirecting to My Orders so you can track every update.
-          </p>
-          <div className="mt-6 h-2 overflow-hidden rounded-full bg-bg">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: '100%' }}
-              transition={{ duration: 1.4 }}
-              className="h-full rounded-full bg-primary"
-            />
-          </div>
-        </motion.div>
       </div>
     );
   }
@@ -185,40 +218,138 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
       </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_0.78fr]">
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <FormSection icon={<MapPinned size={18} />} title="Shipping Details" subtitle="Where should we send the books?">
-            <div className="grid gap-4 md:grid-cols-2">
-              <InputField label="Full name" {...register('name', { required: true })} />
-              <InputField label="Phone number" {...register('phone', { required: true })} />
-              <InputField label="Address line 1" {...register('line1', { required: true })} className="md:col-span-2" />
-              <InputField label="Address line 2" {...register('line2')} className="md:col-span-2" />
-              <InputField label="City" {...register('city', { required: true })} />
-              <InputField label="State" {...register('state', { required: true })} />
-              <InputField label="Pincode" {...register('pincode', { required: true })} />
-              <InputField label="College" {...register('college', { required: true })} />
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+          <section className="rounded-[28px] border border-border bg-white p-5 shadow-soft sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                <MapPinned size={18} />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-text">Shipping Details</h2>
+                <p className="mt-1 text-sm text-subtext">Where should we send the books?</p>
+              </div>
             </div>
-          </FormSection>
 
-          <FormSection icon={<CreditCard size={18} />} title="Payment Method" subtitle="Choose the most convenient payment option">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {paymentMethods.map((method) => (
-                <label
-                  key={method}
-                  className="flex cursor-pointer items-center gap-3 rounded-2xl border border-border bg-bg px-4 py-3 text-sm font-medium text-text transition has-[:checked]:border-primary has-[:checked]:bg-primary/10"
-                >
-                  <input value={method} type="radio" {...register('paymentMethod', { required: true })} className="accent-primary" />
-                  <span>{method}</span>
-                </label>
-              ))}
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <FormField
+                label="Full Name"
+                required
+                placeholder="Enter your full name"
+                aria-label="Full Name"
+                error={errors.name?.message}
+                {...register('name')}
+              />
+              <FormField
+                label="Phone Number"
+                required
+                placeholder="10-digit mobile number"
+                aria-label="Phone Number"
+                error={errors.phone?.message}
+                inputMode="numeric"
+                {...register('phone')}
+              />
+              <FormField
+                as="textarea"
+                label="Address Line 1"
+                required
+                placeholder="House / hostel / room details"
+                aria-label="Address Line 1"
+                wrapperClassName="md:col-span-2"
+                error={errors.line1?.message}
+                rows={3}
+                {...register('line1')}
+              />
+              <FormField
+                as="textarea"
+                label="Address Line 2"
+                placeholder="Landmark or optional details"
+                aria-label="Address Line 2"
+                wrapperClassName="md:col-span-2"
+                helperText="Optional"
+                rows={3}
+                error={errors.line2?.message}
+                {...register('line2')}
+              />
+              <FormField
+                label="City"
+                required
+                placeholder="City"
+                aria-label="City"
+                error={errors.city?.message}
+                {...register('city')}
+              />
+              <FormField
+                label="State"
+                required
+                placeholder="State"
+                aria-label="State"
+                error={errors.state?.message}
+                {...register('state')}
+              />
+              <FormField
+                label="Pincode"
+                required
+                placeholder="6-digit pincode"
+                aria-label="Pincode"
+                error={errors.pincode?.message}
+                inputMode="numeric"
+                {...register('pincode')}
+              />
+              <FormField
+                label="College"
+                required
+                placeholder="College name"
+                aria-label="College"
+                error={errors.college?.message}
+                {...register('college')}
+              />
             </div>
-          </FormSection>
+          </section>
 
-          <button
-            disabled={isSubmitting || resolvedBooks.length === 0}
-            className="w-full rounded-2xl bg-primary px-4 py-4 text-base font-semibold text-white transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+          <section className="rounded-[28px] border border-border bg-white p-5 shadow-soft sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                <CreditCard size={18} />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-text">Payment Method</h2>
+                <p className="mt-1 text-sm text-subtext">Choose the most convenient payment option</p>
+              </div>
+            </div>
+
+            <fieldset className="mt-5">
+              <legend className="mb-3 block text-sm font-medium text-subtext">
+                Payment Method <span className="ml-1 text-error">*</span>
+              </legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {paymentMethods.map((method) => (
+                  <label
+                    key={method}
+                    className="flex cursor-pointer items-center gap-3 rounded-2xl border border-border bg-bg px-4 py-3 text-sm font-medium text-text transition has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+                  >
+                    <input
+                      value={method}
+                      type="radio"
+                      {...register('paymentMethod')}
+                      className="accent-primary"
+                      aria-label={method}
+                    />
+                    <span>{method}</span>
+                  </label>
+                ))}
+              </div>
+              {errors.paymentMethod ? <p className="mt-2 text-sm text-error">{errors.paymentMethod.message}</p> : null}
+            </fieldset>
+          </section>
+
+          <LoadingButton
+            type="submit"
+            isLoading={isSubmittingOrder || isSubmitting}
+            disabled={!isValid || resolvedBooks.length === 0}
+            className="w-full bg-primary px-4 py-4 text-base font-semibold text-white hover:shadow-lg"
           >
-            {isSubmitting ? 'Placing Order...' : 'Place Order'}
-          </button>
+            Place Order
+          </LoadingButton>
         </form>
 
         <div className="space-y-4">
@@ -229,7 +360,7 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
             total={total}
             onContinueShopping={() => navigate('/library')}
             onCheckout={handleSubmit(onSubmit)}
-            checkoutLabel="Place Order"
+            checkoutLabel={isSubmittingOrder || isSubmitting ? 'Placing Order...' : 'Place Order'}
           />
 
           <section className="rounded-[28px] border border-border bg-white p-5 shadow-soft">
@@ -261,46 +392,68 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
           </section>
         </div>
       </div>
+
+      <Modal
+        open={Boolean(result)}
+        onClose={closeResult}
+        title={result?.title ?? ''}
+        description={result?.description}
+        footer={
+          result?.type === 'success' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <LoadingButton
+                type="button"
+                onClick={() => {
+                  closeResult();
+                  navigate('/orders', { replace: true });
+                }}
+                className="w-full bg-primary px-4 py-3 font-semibold text-white"
+              >
+                View Orders
+              </LoadingButton>
+              <LoadingButton
+                type="button"
+                onClick={() => {
+                  closeResult();
+                  navigate('/library');
+                }}
+                className="w-full border border-border bg-white px-4 py-3 font-semibold text-text"
+              >
+                Continue Shopping
+              </LoadingButton>
+            </div>
+          ) : (
+            <LoadingButton
+              type="button"
+              onClick={closeResult}
+              className="w-full bg-primary px-4 py-3 font-semibold text-white"
+            >
+              Close
+            </LoadingButton>
+          )
+        }
+      >
+        <div className="flex items-center gap-4">
+          <motion.div
+            initial={{ scale: 0.82, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className={`flex h-16 w-16 items-center justify-center rounded-full ${
+              result?.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+            }`}
+          >
+            {result?.type === 'success' ? <CheckCircle2 size={34} /> : <XCircle size={34} />}
+          </motion.div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-subtext">
+              {result?.type === 'success' ? 'Your order is confirmed and queued for processing.' : 'Please review the details and try again.'}
+            </p>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
-
-const FormSection = ({
-  icon,
-  title,
-  subtitle,
-  children,
-}: {
-  icon: ReactNode;
-  title: string;
-  subtitle: string;
-  children: ReactNode;
-}) => (
-  <section className="rounded-[28px] border border-border bg-white p-5 shadow-soft sm:p-6">
-    <div className="flex items-start gap-3">
-      <div className="rounded-2xl bg-primary/10 p-3 text-primary">{icon}</div>
-      <div>
-        <h2 className="text-xl font-semibold text-text">{title}</h2>
-        <p className="mt-1 text-sm text-subtext">{subtitle}</p>
-      </div>
-    </div>
-    <div className="mt-5">{children}</div>
-  </section>
-);
-
-const InputField = ({
-  label,
-  className,
-  ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label: string }) => (
-  <label className={`block ${className ?? ''}`}>
-    <span className="mb-2 block text-sm font-medium text-subtext">{label}</span>
-    <input
-      {...props}
-      className="w-full rounded-2xl border border-border bg-bg px-4 py-3 text-sm text-text outline-none transition placeholder:text-subtext/60 focus:border-primary"
-    />
-  </label>
-);
 
 const CheckoutSkeleton = () => (
   <div className="rounded-[28px] border border-border bg-white p-5 shadow-soft">

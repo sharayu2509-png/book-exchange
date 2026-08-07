@@ -17,6 +17,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useMarketplace } from '../contexts/MarketplaceContext';
+import { useToast } from '../contexts/ToastContext';
 
 const menuItems = [
   { label: 'Orders', to: '/orders', icon: <FileText size={16} /> },
@@ -38,9 +39,15 @@ export const AccountPage = () => {
     recentlyViewed,
     wishlist,
   } = useMarketplace();
+  const { showToast } = useToast();
 
   const handleLogout = async () => {
     await logout();
+    showToast({
+      title: 'Logout Successful',
+      description: 'You have been signed out.',
+      variant: 'success',
+    });
     navigate('/login', { replace: true });
   };
 
@@ -175,4 +182,3 @@ export const AccountPage = () => {
     </div>
   );
 };
-

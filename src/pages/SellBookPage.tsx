@@ -2,14 +2,18 @@ import { motion } from 'framer-motion';
 import { ImagePlus, Upload, WandSparkles } from 'lucide-react';
 import { useState, type DragEvent, type FormEvent, type InputHTMLAttributes } from 'react';
 import type { Book } from '../types';
+import { LoadingButton } from '../components/ui/LoadingButton';
+import { useToast } from '../contexts/ToastContext';
 
 interface SellBookPageProps {
-  onSubmit: (book: Book) => void;
+  onSubmit: (book: Book) => Promise<void>;
 }
 
 export const SellBookPage = ({ onSubmit }: SellBookPageProps) => {
   const [preview, setPreview] = useState<string>('');
   const [dragActive, setDragActive] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { showToast } = useToast();
 
   const handleImage = (file?: File | null) => {
     if (!file) return;
@@ -40,9 +44,25 @@ export const SellBookPage = ({ onSubmit }: SellBookPageProps) => {
       category: String(formData.get('branch') || 'Engineering'),
     };
 
-    onSubmit(newBook);
-    event.currentTarget.reset();
-    setPreview('');
+    setIsSubmitting(true);
+    try {
+      await onSubmit(newBook);
+      showToast({
+        title: 'Book Uploaded',
+        description: `${newBook.title} has been added to your listings.`,
+        variant: 'success',
+      });
+      event.currentTarget.reset();
+      setPreview('');
+    } catch (error) {
+      showToast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Unable to upload book',
+        variant: 'error',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDrop = (event: DragEvent<HTMLLabelElement>) => {
@@ -144,13 +164,14 @@ export const SellBookPage = ({ onSubmit }: SellBookPageProps) => {
               Exchange option available
             </label>
 
-            <button
+            <LoadingButton
               type="submit"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 font-semibold text-white transition hover:scale-[1.01] hover:shadow-lg sm:w-auto"
+              isLoading={isSubmitting}
+              className="w-full bg-primary px-4 py-3 font-semibold text-white hover:shadow-lg sm:w-auto"
             >
               <Upload size={16} />
               Submit Listing
-            </button>
+            </LoadingButton>
           </div>
         </form>
       </motion.div>

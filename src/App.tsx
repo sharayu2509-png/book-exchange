@@ -4,10 +4,11 @@ import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-do
 import { BottomNav } from './components/BottomNav';
 import { LoadingState } from './components/LoadingState';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { ToastViewport } from './components/ToastViewport';
+import { ToastHost } from './components/ToastHost';
 import { TopNav } from './components/TopNav';
 import { useAuth } from './contexts/AuthContext';
 import { useMarketplace } from './contexts/MarketplaceContext';
+import { useToast } from './contexts/ToastContext';
 import { books as seedBooks } from './data/books';
 import { createBook, fetchBooks } from './services/api';
 import type { Book } from './types';
@@ -50,6 +51,7 @@ const AppRoutes = () => {
   const location = useLocation();
   const { isLoading } = useAuth();
   const { isLoading: marketplaceLoading } = useMarketplace();
+  const { showToast } = useToast();
   const [allBooks, setAllBooks] = useState<Book[]>(seedBooks);
 
   useEffect(() => {
@@ -79,8 +81,18 @@ const AppRoutes = () => {
     try {
       const savedBook = await createBook(book);
       setAllBooks((currentBooks) => [savedBook, ...currentBooks]);
+      showToast({
+        title: 'Book Uploaded',
+        description: `${savedBook.title} is now live in the marketplace.`,
+        variant: 'success',
+      });
     } catch {
       setAllBooks((currentBooks) => [book, ...currentBooks]);
+      showToast({
+        title: 'Network Error',
+        description: 'Saved locally while the server was unavailable.',
+        variant: 'info',
+      });
     }
   };
 
@@ -92,7 +104,7 @@ const AppRoutes = () => {
 
   return (
     <div className="min-h-screen bg-bg text-text">
-      <ToastViewport />
+      <ToastHost />
       {showAuthNav ? <TopNav /> : null}
 
       <AnimatePresence mode="wait">

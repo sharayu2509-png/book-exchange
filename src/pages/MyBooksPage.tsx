@@ -1,6 +1,9 @@
 import { motion } from 'framer-motion';
 import { BadgeCheck, Pencil, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { EmptyState } from '../components/EmptyState';
+import { LoadingButton } from '../components/ui/LoadingButton';
+import { useToast } from '../contexts/ToastContext';
 import type { Book } from '../types';
 
 interface MyBooksPageProps {
@@ -8,6 +11,21 @@ interface MyBooksPageProps {
 }
 
 export const MyBooksPage = ({ books }: MyBooksPageProps) => {
+  const { showToast } = useToast();
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+
+  const triggerAction = (action: string, title: string, description: string) => {
+    setActiveAction(action);
+    window.setTimeout(() => {
+      showToast({
+        title,
+        description,
+        variant: action === 'delete' ? 'info' : 'success',
+      });
+      setActiveAction(null);
+    }, 700);
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
       <section className="rounded-[28px] border border-border bg-white p-4 shadow-soft sm:p-6">
@@ -68,22 +86,44 @@ export const MyBooksPage = ({ books }: MyBooksPageProps) => {
               <div className="mt-4 flex items-center justify-between gap-3">
                 <div className="text-2xl font-semibold text-primary">Rs. {book.price}</div>
                 <div className="flex gap-2">
-                  <button className="rounded-2xl border border-border p-2 transition hover:bg-bg" aria-label="Edit listing">
+                  <button
+                    className="rounded-2xl border border-border p-2 transition hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Edit listing"
+                    disabled={activeAction !== null}
+                    onClick={() => triggerAction('edit', 'Book Updated', `${book.title} listing updated.`)}
+                  >
                     <Pencil size={16} />
                   </button>
-                  <button className="rounded-2xl border border-border p-2 transition hover:bg-bg" aria-label="Delete listing">
+                  <button
+                    className="rounded-2xl border border-border p-2 transition hover:bg-bg disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Delete listing"
+                    disabled={activeAction !== null}
+                    onClick={() => triggerAction('delete', 'Book Deleted', `${book.title} was deleted.`)}
+                  >
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <button className="flex-1 rounded-2xl bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:scale-[1.01]">
+                <LoadingButton
+                  type="button"
+                  isLoading={activeAction === `sold-${book.id}`}
+                  disabled={activeAction !== null}
+                  onClick={() => triggerAction(`sold-${book.id}`, 'Book Updated', `${book.title} marked as sold.`)}
+                  className="flex-1 bg-primary px-3 py-2 text-sm font-semibold text-white"
+                >
                   Mark as Sold
-                </button>
-                <button className="flex-1 rounded-2xl border border-border px-3 py-2 text-sm font-semibold text-text transition hover:bg-bg">
+                </LoadingButton>
+                <LoadingButton
+                  type="button"
+                  isLoading={activeAction === `exchange-${book.id}`}
+                  disabled={activeAction !== null}
+                  onClick={() => triggerAction(`exchange-${book.id}`, 'Book Updated', `${book.title} marked as exchanged.`)}
+                  className="flex-1 border border-border bg-white px-3 py-2 text-sm font-semibold text-text"
+                >
                   Mark as Exchanged
-                </button>
+                </LoadingButton>
               </div>
             </motion.article>
           ))}

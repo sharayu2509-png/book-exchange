@@ -16,6 +16,7 @@ export const OrderCard = ({ order, onCancel, onReorder, onDownloadInvoice }: Ord
   const firstBook = order.books[0];
   const displayDate = new Date(order.orderedDate).toLocaleDateString();
   const deliveryDate = order.deliveredDate ? new Date(order.deliveredDate).toLocaleDateString() : 'Within 5-7 days';
+  const canCancel = !['Cancelled', 'Delivered', 'Completed'].includes(order.status);
 
   return (
     <motion.article
@@ -81,7 +82,7 @@ export const OrderCard = ({ order, onCancel, onReorder, onDownloadInvoice }: Ord
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            {order.status !== 'Cancelled' ? (
+            {canCancel ? (
               <button
                 type="button"
                 onClick={onCancel}
@@ -89,6 +90,16 @@ export const OrderCard = ({ order, onCancel, onReorder, onDownloadInvoice }: Ord
               >
                 <XCircle size={15} />
                 Cancel Order
+              </button>
+            ) : null}
+            {!canCancel ? (
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-2 text-sm font-semibold text-subtext"
+              >
+                <XCircle size={15} />
+                Cancel Disabled
               </button>
             ) : null}
             <Link

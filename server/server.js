@@ -405,6 +405,9 @@ const normalizeOrderBook = (book = {}) => ({
   image: String(book.image ?? fallbackImage),
 });
 
+const paymentMethods = ['Cash on Delivery', 'UPI', 'Credit Card', 'Debit Card', 'Net Banking'];
+const cancellableStatuses = ['Pending', 'Confirmed', 'Packed', 'Shipped'];
+
 const toPublicCartItem = (item) => ({
   id: String(item.id ?? item._id),
   userId: String(item.userId),
@@ -937,8 +940,10 @@ app.get('/api/orders/:id', requireAuth, async (req, res) => {
 app.post('/api/orders/create', requireAuth, async (req, res) => {
   try {
     const userId = String(req.authUser.id ?? req.authUser._id);
-    const books = Array.isArray(req.body?.books) ? req.body.books.map(normalizeOrderBook).filter((book) => book.bookId) : [];
-    const price = Number(req.body?.price ?? books.reduce((total, book) => total + book.price * book.quantity, 0));
+    const rawBooks = Array.isArray(req.body?.books) ? req.body.books : [];
+    const books = rawBooks.map(normalizeOrderBook).filter((book) => book.bookId && book.title);
+    const computedPrice = books.reduce((total, book) => total + book.price * book.quantity, 0);
+    const price = Number(req.body?.price ?? computedPrice);
     const paymentMethod = String(req.body?.paymentMethod ?? 'UPI');
     const deliveryAddress = normalizeOrderAddress(req.body?.deliveryAddress ?? {});
     const sellerId = String(req.body?.sellerId ?? books[0]?.sellerId ?? 'multiple');
@@ -949,8 +954,23 @@ app.post('/api/orders/create', requireAuth, async (req, res) => {
       return;
     }
 
+    if (books.some((book) => !book.title || !book.author || !book.subject || !book.price || book.quantity < 1)) {
+      res.status(400).json({ message: 'Order items are invalid' });
+      return;
+    }
+
     if (!deliveryAddress.name || !deliveryAddress.phone || !deliveryAddress.line1 || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.pincode) {
       res.status(400).json({ message: 'Delivery address is incomplete' });
+      return;
+    }
+
+    if (!paymentMethods.includes(paymentMethod)) {
+      res.status(400).json({ message: 'Invalid payment method' });
+      return;
+    }
+
+    if (Number.isNaN(price) || price < computedPrice) {
+      res.status(400).json({ message: 'Invalid order total' });
       return;
     }
 
@@ -1009,6 +1029,21 @@ app.post('/api/orders/create', requireAuth, async (req, res) => {
 app.put('/api/orders/cancel/:id', requireAuth, async (req, res) => {
   try {
     const userId = String(req.authUser.id ?? req.authUser._id);
+    const allOrders = await getOrderCollection();
+    const existingOrder = allOrders.find(
+      (item) => String(item.userId) === String(userId) && String(item.id ?? item._id) === String(req.params.id),
+    );
+
+    if (!existingOrder) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    if (!cancellableStatuses.includes(String(existingOrder.status))) {
+      res.status(409).json({ message: 'This order cannot be cancelled anymore' });
+      return;
+    }
+
     const updated = await updateUserOrder(userId, req.params.id, (order) => ({
       ...order,
       status: 'Cancelled',
@@ -1037,6 +1072,20 @@ app.put('/api/orders/status/:id', requireAuth, async (req, res) => {
 
     if (!allowedStatuses.includes(status)) {
       res.status(400).json({ message: 'Invalid order status' });
+      return;
+    }
+
+    const allOrders = await getOrderCollection();
+    const existingOrder = allOrders.find(
+      (item) => String(item.userId) === String(userId) && String(item.id ?? item._id) === String(req.params.id),
+    );
+    if (!existingOrder) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    if (['Cancelled', 'Completed'].includes(String(existingOrder.status))) {
+      res.status(409).json({ message: 'This order can no longer be updated' });
       return;
     }
 

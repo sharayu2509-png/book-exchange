@@ -1,10 +1,14 @@
 import { motion } from 'framer-motion';
-import { CalendarDays, Download, Phone, Route, Send, ShieldCheck, User2 } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Download, Phone, Route, Send, ShieldCheck, User2 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { EmptyState } from '../../components/EmptyState';
 import { OrderStatusBadge } from '../../components/orders/OrderStatusBadge';
+import { LoadingButton } from '../../components/ui/LoadingButton';
+import { Modal } from '../../components/ui/Modal';
 import { useMarketplace } from '../../contexts/MarketplaceContext';
+import { useToast } from '../../contexts/ToastContext';
 import type { Order } from '../../types';
 
 interface OrderDetailsPageProps {
@@ -16,6 +20,10 @@ const timeline = ['Ordered', 'Confirmed', 'Packed', 'Shipped', 'Out For Delivery
 export const OrderDetailsPage = ({ order }: OrderDetailsPageProps) => {
   const navigate = useNavigate();
   const { cancelOrderById } = useMarketplace();
+  const { showToast } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [cancelSuccess, setCancelSuccess] = useState(false);
 
   if (!order) {
     return (
@@ -80,6 +88,38 @@ export const OrderDetailsPage = ({ order }: OrderDetailsPageProps) => {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const canCancel = !['Cancelled', 'Delivered', 'Completed'].includes(order.status);
+
+  const confirmCancel = async () => {
+    if (!order || !canCancel) {
+      return;
+    }
+
+    setCancelLoading(true);
+    try {
+      await cancelOrderById(order.id);
+      setCancelSuccess(true);
+      showToast({
+        title: 'Order Cancelled Successfully',
+        description: 'Your order has been cancelled successfully.',
+        variant: 'success',
+      });
+      window.setTimeout(() => {
+        setConfirmOpen(false);
+        setCancelSuccess(false);
+        window.location.reload();
+      }, 1200);
+    } catch (error) {
+      showToast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'error',
+      });
+    } finally {
+      setCancelLoading(false);
+    }
   };
 
   return (
@@ -221,18 +261,72 @@ export const OrderDetailsPage = ({ order }: OrderDetailsPageProps) => {
               </button>
             </div>
 
-            {order.status !== 'Cancelled' ? (
+            {canCancel ? (
               <button
                 type="button"
-                onClick={() => cancelOrderById(order.id)}
+                onClick={() => setConfirmOpen(true)}
                 className="mt-3 w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-100"
               >
                 Cancel Order
               </button>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="mt-3 w-full rounded-2xl border border-border bg-bg px-4 py-3 text-sm font-semibold text-subtext"
+              >
+                Cancel Disabled
+              </button>
+            )}
           </div>
         </div>
       </motion.section>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => {
+          setConfirmOpen(false);
+          setCancelSuccess(false);
+        }}
+        title={cancelSuccess ? 'Order Cancelled Successfully' : 'Cancel this order?'}
+        description={
+          cancelSuccess
+            ? 'Your order has been cancelled successfully.'
+            : 'Are you sure you want to cancel this order? This action cannot be undone.'
+        }
+        footer={
+          cancelSuccess ? null : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <LoadingButton
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="w-full border border-border bg-white px-4 py-3 font-semibold text-text"
+              >
+                Keep Order
+              </LoadingButton>
+              <LoadingButton
+                type="button"
+                onClick={confirmCancel}
+                isLoading={cancelLoading}
+                className="w-full bg-error px-4 py-3 font-semibold text-white"
+              >
+                Cancel Order
+              </LoadingButton>
+            </div>
+          )
+        }
+      >
+        {cancelSuccess ? (
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+              <CheckCircle2 size={28} />
+            </div>
+            <div>
+              <p className="text-sm text-subtext">The order status has been updated in the database.</p>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 };

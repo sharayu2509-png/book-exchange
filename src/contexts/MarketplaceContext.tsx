@@ -1,0 +1,546 @@
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { demoCartItems, demoOrders } from '../data/marketplace';
+import { useAuth } from './AuthContext';
+import type { Book, CartItem, Order, OrderAddress, OrderStatus, PaymentMethod } from '../types';
+import {
+  addCartItem,
+  clearCart as clearCartRequest,
+  fetchCart,
+  removeCartItem,
+  updateCartItem,
+} from '../services/cart';
+import { cancelOrder as cancelOrderRequest, createOrder, fetchOrders, updateOrderStatus } from '../services/orders';
+import { useToast } from './ToastContext';
+
+interface MarketplaceContextValue {
+  isLoading: boolean;
+  cartItems: CartItem[];
+  orders: Order[];
+  wishlist: Book[];
+  recentlyViewed: Book[];
+  cartCount: number;
+  wishlistCount: number;
+  orderCount: number;
+  pendingOrdersCount: number;
+  completedOrdersCount: number;
+  purchasedCount: number;
+  addToCart: (book: Book, quantity?: number) => Promise<boolean>;
+  updateCartQuantity: (cartItemId: string | number, quantity: number) => Promise<void>;
+  removeFromCart: (cartItemId: string | number) => Promise<void>;
+  clearCart: () => Promise<void>;
+  moveToWishlist: (book: Book) => Promise<void>;
+  toggleWishlist: (book: Book) => Promise<void>;
+  recordRecentlyViewed: (book: Book) => void;
+  createOrderFromCart: (payload: {
+    books: Array<{ book: Book; quantity: number }>;
+    paymentMethod: PaymentMethod;
+    deliveryAddress: OrderAddress;
+    selectedCartItemIds?: Array<string | number>;
+  }) => Promise<Order>;
+  cancelOrderById: (orderId: string | number) => Promise<void>;
+  setOrderStatus: (orderId: string | number, status: OrderStatus) => Promise<void>;
+  reorderOrder: (orderId: string | number) => Promise<void>;
+  isInWishlist: (bookId: string | number) => boolean;
+}
+
+interface MarketplaceState {
+  cartItems: CartItem[];
+  orders: Order[];
+  wishlist: Book[];
+  recentlyViewed: Book[];
+}
+
+const STORAGE_PREFIX = 'book-exchange-marketplace';
+
+const MarketplaceContext = createContext<MarketplaceContextValue | undefined>(undefined);
+
+const storageKeyForUser = (userId: string | number | undefined) => `${STORAGE_PREFIX}-${userId ?? 'guest'}`;
+
+const normalizeBook = (book: Book): Book => ({
+  ...book,
+  id: String(book.id),
+});
+
+const fallbackDemoState = (): MarketplaceState => ({
+  cartItems: demoCartItems,
+  orders: demoOrders,
+  wishlist: [],
+  recentlyViewed: [],
+});
+
+const readStoredState = (userId: string | number | undefined): MarketplaceState | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKeyForUser(userId));
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as MarketplaceState;
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredState = (userId: string | number | undefined, state: MarketplaceState) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(storageKeyForUser(userId), JSON.stringify(state));
+};
+
+export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
+  const { token, user } = useAuth();
+  const { showToast } = useToast();
+  const [isLoading, setIsLoading] = useState(true);
+  const [state, setState] = useState<MarketplaceState>({
+    cartItems: [],
+    orders: [],
+    wishlist: [],
+    recentlyViewed: [],
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    const initialize = async () => {
+      setIsLoading(true);
+      const storedState = readStoredState(user?.id);
+
+      if (!token) {
+        setState(storedState ?? fallbackDemoState());
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const [remoteCart, remoteOrders] = await Promise.all([fetchCart(token), fetchOrders(token)]);
+        if (!active) {
+          return;
+        }
+
+        const nextState = {
+          cartItems: remoteCart,
+          orders: remoteOrders.length > 0 ? remoteOrders : storedState?.orders ?? demoOrders,
+          wishlist: storedState?.wishlist ?? [],
+          recentlyViewed: storedState?.recentlyViewed ?? [],
+        };
+
+        setState(nextState);
+        writeStoredState(user?.id, nextState);
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setState(storedState ?? fallbackDemoState());
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initialize();
+
+    return () => {
+      active = false;
+    };
+  }, [token, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    writeStoredState(user?.id, state);
+  }, [state, user?.id]);
+
+  const updateState = (updater: (current: MarketplaceState) => MarketplaceState) => {
+    setState((current) => updater(current));
+  };
+
+  const value = useMemo<MarketplaceContextValue>(
+    () => ({
+      isLoading,
+      cartItems: state.cartItems,
+      orders: state.orders,
+      wishlist: state.wishlist.map(normalizeBook),
+      recentlyViewed: state.recentlyViewed.map(normalizeBook),
+      cartCount: state.cartItems.reduce((total, item) => total + item.quantity, 0),
+      wishlistCount: state.wishlist.length,
+      orderCount: state.orders.length,
+      pendingOrdersCount: state.orders.filter((order) => ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Out For Delivery'].includes(order.status)).length,
+      completedOrdersCount: state.orders.filter((order) => ['Delivered', 'Completed'].includes(order.status)).length,
+      purchasedCount: state.orders.filter((order) => ['Delivered', 'Completed'].includes(order.status)).length,
+      isInWishlist: (bookId) => state.wishlist.some((item) => String(item.id) === String(bookId)),
+      addToCart: async (book, quantity = 1) => {
+        if (!token) {
+          throw new Error('Please sign in to add items to your cart');
+        }
+
+        const existingItem = state.cartItems.find((item) => String(item.bookId) === String(book.id));
+        if (existingItem) {
+          showToast({
+            title: 'Already in cart',
+            description: `${book.title} is already in your cart.`,
+            variant: 'info',
+          });
+          return false;
+        }
+
+        try {
+          const createdItem = await addCartItem(token, {
+            bookId: book.id,
+            quantity,
+            bookSnapshot: {
+              id: book.id,
+              title: book.title,
+              author: book.author,
+              subject: book.subject,
+              branch: book.branch,
+              semester: book.semester,
+              condition: book.condition,
+              price: book.price,
+              exchangeAvailable: book.exchangeAvailable,
+              seller: book.seller,
+              college: book.college,
+              location: book.location,
+              image: book.image,
+            },
+          });
+          updateState((current) => ({
+            ...current,
+            cartItems: [...current.cartItems, createdItem],
+          }));
+          showToast({
+            title: 'Added to cart',
+            description: `${book.title} is now ready for checkout.`,
+            variant: 'success',
+          });
+          return true;
+        } catch {
+          updateState((current) => ({
+            ...current,
+            cartItems: [
+              ...current.cartItems,
+              {
+                id: `local-cart-${Date.now()}`,
+                userId: user?.id ?? 'guest',
+                bookId: book.id,
+                quantity,
+                book: {
+                  id: book.id,
+                  title: book.title,
+                  author: book.author,
+                  subject: book.subject,
+                  branch: book.branch,
+                  semester: book.semester,
+                  condition: book.condition,
+                  price: book.price,
+                  exchangeAvailable: book.exchangeAvailable,
+                  seller: book.seller,
+                  college: book.college,
+                  location: book.location,
+                  image: book.image,
+                },
+              },
+            ],
+          }));
+          showToast({
+            title: 'Added to cart',
+            description: `${book.title} was saved locally for checkout.`,
+            variant: 'success',
+          });
+          return true;
+        }
+      },
+      updateCartQuantity: async (cartItemId, quantity) => {
+        if (quantity < 1) {
+          return;
+        }
+
+        if (!token) {
+          updateState((current) => ({
+            ...current,
+            cartItems: current.cartItems.map((item) =>
+              String(item.id) === String(cartItemId) ? { ...item, quantity } : item,
+            ),
+          }));
+          return;
+        }
+
+        const updated = await updateCartItem(token, { id: cartItemId, quantity });
+        updateState((current) => ({
+          ...current,
+          cartItems: current.cartItems.map((item) => (String(item.id) === String(updated.id) ? updated : item)),
+        }));
+      },
+      removeFromCart: async (cartItemId) => {
+        if (!token) {
+          updateState((current) => ({
+            ...current,
+            cartItems: current.cartItems.filter((item) => String(item.id) !== String(cartItemId)),
+          }));
+          showToast({
+            title: 'Removed from cart',
+            description: 'The book has been removed from your cart.',
+            variant: 'info',
+          });
+          return;
+        }
+
+        await removeCartItem(token, cartItemId);
+        updateState((current) => ({
+          ...current,
+          cartItems: current.cartItems.filter((item) => String(item.id) !== String(cartItemId)),
+        }));
+        showToast({
+          title: 'Removed from cart',
+          description: 'The book has been removed from your cart.',
+          variant: 'info',
+        });
+      },
+      clearCart: async () => {
+        if (!token) {
+          updateState((current) => ({ ...current, cartItems: [] }));
+          return;
+        }
+
+        await clearCartRequest(token);
+        updateState((current) => ({ ...current, cartItems: [] }));
+      },
+      moveToWishlist: async (book) => {
+        updateState((current) => ({
+          ...current,
+          cartItems: current.cartItems.filter((item) => String(item.bookId) !== String(book.id)),
+          wishlist: current.wishlist.some((item) => String(item.id) === String(book.id))
+            ? current.wishlist
+            : [...current.wishlist, normalizeBook(book)],
+        }));
+        showToast({
+          title: 'Moved to wishlist',
+          description: `${book.title} has been saved for later.`,
+          variant: 'success',
+        });
+      },
+      toggleWishlist: async (book) => {
+        const exists = state.wishlist.some((item) => String(item.id) === String(book.id));
+        updateState((current) => {
+          return {
+            ...current,
+            wishlist: exists
+              ? current.wishlist.filter((item) => String(item.id) !== String(book.id))
+              : [...current.wishlist, normalizeBook(book)],
+          };
+        });
+        showToast({
+          title: 'Wishlist updated',
+          description: `${book.title} has been ${exists ? 'removed from' : 'added to'} your wishlist.`,
+          variant: 'info',
+        });
+      },
+      recordRecentlyViewed: (book) => {
+        updateState((current) => {
+          if (current.recentlyViewed[0] && String(current.recentlyViewed[0].id) === String(book.id)) {
+            return current;
+          }
+
+          const filtered = current.recentlyViewed.filter((item) => String(item.id) !== String(book.id));
+          return {
+            ...current,
+            recentlyViewed: [normalizeBook(book), ...filtered].slice(0, 8),
+          };
+        });
+      },
+      createOrderFromCart: async ({ books, paymentMethod, deliveryAddress, selectedCartItemIds }) => {
+        if (!token) {
+          throw new Error('Please sign in to place an order');
+        }
+
+        const payloadBooks = books.map(({ book, quantity }) => ({
+          id: book.id,
+          bookId: book.id,
+          title: book.title,
+          author: book.author,
+          subject: book.subject,
+          branch: book.branch,
+          semester: book.semester,
+          condition: book.condition,
+          price: book.price,
+          quantity,
+          seller: book.seller,
+          sellerId: book.seller,
+          college: book.college,
+          location: book.location,
+          image: book.image,
+        }));
+
+        const order = await createOrder(token, {
+          books: payloadBooks,
+          price: books.reduce((total, item) => total + item.book.price * item.quantity, 0),
+          paymentMethod,
+          deliveryAddress,
+          selectedCartItemIds,
+          sellerId: payloadBooks[0]?.sellerId,
+        });
+
+        updateState((current) => ({
+          ...current,
+          orders: [order, ...current.orders],
+          cartItems: current.cartItems.filter(
+            (item) => !selectedCartItemIds?.length || !selectedCartItemIds.includes(item.id),
+          ),
+        }));
+
+        showToast({
+          title: 'Order placed',
+          description: `Your order ${order.transactionId} is being processed.`,
+          variant: 'success',
+        });
+
+        return order;
+      },
+      cancelOrderById: async (orderId) => {
+        if (!token) {
+          updateState((current) => ({
+            ...current,
+            orders: current.orders.map((order) =>
+              String(order.id) === String(orderId) ? { ...order, status: 'Cancelled' } : order,
+            ),
+          }));
+          showToast({
+            title: 'Order cancelled',
+            description: 'Your order was cancelled successfully.',
+            variant: 'info',
+          });
+          return;
+        }
+
+        const updated = await cancelOrderRequest(token, orderId);
+        updateState((current) => ({
+          ...current,
+          orders: current.orders.map((order) => (String(order.id) === String(orderId) ? updated : order)),
+        }));
+        showToast({
+          title: 'Order cancelled',
+          description: 'Your order was cancelled successfully.',
+          variant: 'info',
+        });
+      },
+      setOrderStatus: async (orderId, status) => {
+        if (!token) {
+          updateState((current) => ({
+            ...current,
+            orders: current.orders.map((order) =>
+              String(order.id) === String(orderId)
+                ? { ...order, status, deliveredDate: status === 'Delivered' ? new Date().toISOString() : order.deliveredDate }
+                : order,
+            ),
+          }));
+          return;
+        }
+
+        const updated = await updateOrderStatus(token, orderId, status);
+        updateState((current) => ({
+          ...current,
+          orders: current.orders.map((order) => (String(order.id) === String(orderId) ? updated : order)),
+        }));
+      },
+      reorderOrder: async (orderId) => {
+        const order = state.orders.find((item) => String(item.id) === String(orderId));
+        if (!order) {
+          return;
+        }
+
+        if (!token) {
+          updateState((current) => ({
+            ...current,
+            cartItems: [
+              ...current.cartItems,
+              ...order.books.map((book) => ({
+                id: `local-reorder-${Date.now()}-${book.bookId}`,
+                userId: user?.id ?? 'guest',
+                bookId: book.bookId,
+                quantity: book.quantity,
+                book: {
+                  id: book.bookId,
+                  title: book.title,
+                  author: book.author,
+                  subject: book.subject,
+                  branch: book.branch,
+                  semester: book.semester,
+                  condition: book.condition,
+                  price: book.price,
+                  exchangeAvailable: false,
+                  seller: book.seller,
+                  college: book.college,
+                  location: book.location,
+                  image: book.image,
+                },
+              })),
+            ],
+          }));
+          showToast({
+            title: 'Reordered',
+            description: 'The books were added back to your cart.',
+            variant: 'success',
+          });
+          return;
+        }
+
+        await Promise.all(
+          order.books.map((book) =>
+            addCartItem(token, {
+              bookId: book.bookId,
+              quantity: book.quantity,
+              bookSnapshot: {
+                id: book.bookId,
+                title: book.title,
+                author: book.author,
+                subject: book.subject,
+                branch: book.branch,
+                semester: book.semester,
+                condition: book.condition,
+                price: book.price,
+                exchangeAvailable: false,
+                seller: book.seller,
+                college: book.college,
+                location: book.location,
+                image: book.image,
+              },
+            }),
+          ),
+        );
+        const refreshedCart = await fetchCart(token).catch(() => null);
+        if (refreshedCart) {
+          updateState((current) => ({
+            ...current,
+            cartItems: refreshedCart,
+          }));
+        }
+        showToast({
+          title: 'Reordered',
+          description: 'The books were added back to your cart.',
+          variant: 'success',
+        });
+      },
+    }),
+    [isLoading, state, token, user?.id, showToast],
+  );
+
+  return <MarketplaceContext.Provider value={value}>{children}</MarketplaceContext.Provider>;
+};
+
+export const useMarketplace = () => {
+  const context = useContext(MarketplaceContext);
+  if (!context) {
+    throw new Error('useMarketplace must be used within a MarketplaceProvider');
+  }
+
+  return context;
+};

@@ -39,6 +39,8 @@ const tableCandidates = Array.from(new Set([preferredTableName, 'projects', 'boo
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const authDataDir = path.join(__dirname, '.data');
 const authUsersFile = path.join(authDataDir, 'users.json');
+const cartItemsFile = path.join(authDataDir, 'cart.json');
+const ordersFile = path.join(authDataDir, 'orders.json');
 
 const base64Url = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
@@ -145,11 +147,17 @@ const publicUser = (user) => ({
 const createFileStore = async () => {
   await fs.mkdir(authDataDir, { recursive: true });
 
-  try {
-    await fs.access(authUsersFile);
-  } catch {
-    await fs.writeFile(authUsersFile, JSON.stringify({ users: [] }, null, 2), 'utf8');
-  }
+  const ensureFile = async (filePath, fallback) => {
+    try {
+      await fs.access(filePath);
+    } catch {
+      await fs.writeFile(filePath, JSON.stringify(fallback, null, 2), 'utf8');
+    }
+  };
+
+  await ensureFile(authUsersFile, { users: [] });
+  await ensureFile(cartItemsFile, { items: [] });
+  await ensureFile(ordersFile, { items: [] });
 };
 
 const readLocalUsers = async () => {
@@ -162,6 +170,18 @@ const readLocalUsers = async () => {
 const writeLocalUsers = async (users) => {
   await createFileStore();
   await fs.writeFile(authUsersFile, JSON.stringify({ users }, null, 2), 'utf8');
+};
+
+const readLocalCollection = async (filePath) => {
+  await createFileStore();
+  const raw = await fs.readFile(filePath, 'utf8');
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed?.items) ? parsed.items : [];
+};
+
+const writeLocalCollection = async (filePath, items) => {
+  await createFileStore();
+  await fs.writeFile(filePath, JSON.stringify({ items }, null, 2), 'utf8');
 };
 
 const userSchema = new mongoose.Schema(
@@ -180,6 +200,78 @@ const userSchema = new mongoose.Schema(
 );
 
 const UserModel = mongoose.models.User || mongoose.model('User', userSchema);
+
+const cartSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, required: true, index: true },
+    bookId: { type: String, required: true, index: true },
+    quantity: { type: Number, default: 1, min: 1 },
+    bookSnapshot: { type: mongoose.Schema.Types.Mixed },
+  },
+  { timestamps: true },
+);
+
+cartSchema.index({ userId: 1, bookId: 1 }, { unique: true });
+
+const orderBookSchema = new mongoose.Schema(
+  {
+    id: { type: String },
+    bookId: { type: String },
+    title: { type: String },
+    author: { type: String },
+    subject: { type: String },
+    branch: { type: String },
+    semester: { type: String },
+    condition: { type: String },
+    price: { type: Number },
+    quantity: { type: Number },
+    seller: { type: String },
+    sellerId: { type: String },
+    college: { type: String },
+    location: { type: String },
+    image: { type: String },
+  },
+  { _id: false },
+);
+
+const orderAddressSchema = new mongoose.Schema(
+  {
+    name: { type: String },
+    phone: { type: String },
+    line1: { type: String },
+    line2: { type: String },
+    city: { type: String },
+    state: { type: String },
+    pincode: { type: String },
+    college: { type: String },
+  },
+  { _id: false },
+);
+
+const orderSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, required: true, index: true },
+    books: { type: [orderBookSchema], default: [] },
+    sellerId: { type: String, default: 'multiple' },
+    price: { type: Number, required: true },
+    paymentMethod: { type: String, required: true },
+    status: {
+      type: String,
+      default: 'Pending',
+      enum: ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Out For Delivery', 'Delivered', 'Cancelled', 'Completed'],
+    },
+    deliveryAddress: { type: orderAddressSchema, required: true },
+    orderedDate: { type: Date, default: Date.now },
+    deliveredDate: { type: Date },
+    transactionId: { type: String, required: true, index: true },
+  },
+  { timestamps: true },
+);
+
+const CartModel = mongoose.models.Cart || mongoose.model('Cart', cartSchema);
+const OrderModel = mongoose.models.Order || mongoose.model('Order', orderSchema);
 
 let authMode = 'file';
 
@@ -266,6 +358,186 @@ const updateUserRecord = async (id, nextValues) => {
   users[index] = { ...users[index], ...nextValues };
   await writeLocalUsers(users);
   return users[index];
+};
+
+const normalizeSnapshotBook = (book = {}) => ({
+  id: String(book.id ?? book.bookId ?? book._id ?? Date.now()),
+  title: String(book.title ?? book.name ?? 'Untitled'),
+  author: String(book.author ?? 'Unknown'),
+  subject: String(book.subject ?? 'General'),
+  branch: String(book.branch ?? 'General'),
+  semester: String(book.semester ?? '1st'),
+  condition: String(book.condition ?? 'Good'),
+  price: Number(book.price ?? 0),
+  exchangeAvailable: Boolean(book.exchangeAvailable ?? false),
+  seller: String(book.seller ?? 'Unknown'),
+  college: String(book.college ?? 'Unknown College'),
+  location: String(book.location ?? 'Unknown'),
+  image: String(book.image ?? fallbackImage),
+});
+
+const normalizeOrderAddress = (address = {}) => ({
+  name: String(address.name ?? ''),
+  phone: String(address.phone ?? ''),
+  line1: String(address.line1 ?? ''),
+  line2: address.line2 ? String(address.line2) : undefined,
+  city: String(address.city ?? ''),
+  state: String(address.state ?? ''),
+  pincode: String(address.pincode ?? ''),
+  college: address.college ? String(address.college) : undefined,
+});
+
+const normalizeOrderBook = (book = {}) => ({
+  id: String(book.id ?? book.bookId ?? Date.now()),
+  bookId: String(book.bookId ?? book.id ?? Date.now()),
+  title: String(book.title ?? 'Untitled'),
+  author: String(book.author ?? 'Unknown'),
+  subject: String(book.subject ?? 'General'),
+  branch: String(book.branch ?? 'General'),
+  semester: String(book.semester ?? '1st'),
+  condition: String(book.condition ?? 'Good'),
+  price: Number(book.price ?? 0),
+  quantity: Number(book.quantity ?? 1),
+  seller: String(book.seller ?? 'Unknown'),
+  sellerId: book.sellerId ? String(book.sellerId) : undefined,
+  college: String(book.college ?? 'Unknown College'),
+  location: String(book.location ?? 'Unknown'),
+  image: String(book.image ?? fallbackImage),
+});
+
+const toPublicCartItem = (item) => ({
+  id: String(item.id ?? item._id),
+  userId: String(item.userId),
+  bookId: String(item.bookId),
+  quantity: Number(item.quantity ?? 1),
+  book: item.bookSnapshot ? normalizeSnapshotBook(item.bookSnapshot) : undefined,
+  createdAt: item.createdAt ? new Date(item.createdAt).toISOString() : undefined,
+  updatedAt: item.updatedAt ? new Date(item.updatedAt).toISOString() : undefined,
+});
+
+const toPublicOrder = (order) => ({
+  id: String(order.id ?? order._id),
+  userId: String(order.userId),
+  books: Array.isArray(order.books) ? order.books.map(normalizeOrderBook) : [],
+  sellerId: String(order.sellerId ?? 'multiple'),
+  price: Number(order.price ?? 0),
+  paymentMethod: String(order.paymentMethod ?? 'UPI'),
+  status: String(order.status ?? 'Pending'),
+  deliveryAddress: normalizeOrderAddress(order.deliveryAddress ?? {}),
+  orderedDate: new Date(order.orderedDate ?? order.createdAt ?? Date.now()).toISOString(),
+  deliveredDate: order.deliveredDate ? new Date(order.deliveredDate).toISOString() : null,
+  transactionId: String(order.transactionId ?? `TXN-${Date.now()}`),
+  createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : undefined,
+  updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : undefined,
+});
+
+const getCartCollection = async () => {
+  if (authMode === 'mongo') {
+    return CartModel.find({}).lean();
+  }
+
+  return readLocalCollection(cartItemsFile);
+};
+
+const getCartItemsForUser = async (userId) => {
+  const items = await getCartCollection();
+  return items.filter((item) => String(item.userId) === String(userId));
+};
+
+const saveCartCollection = async (items) => {
+  if (authMode === 'mongo') {
+    await CartModel.deleteMany({});
+    if (items.length > 0) {
+      await CartModel.insertMany(items);
+    }
+    return;
+  }
+
+  await writeLocalCollection(cartItemsFile, items);
+};
+
+const getOrderCollection = async () => {
+  if (authMode === 'mongo') {
+    return OrderModel.find({}).lean();
+  }
+
+  return readLocalCollection(ordersFile);
+};
+
+const getOrdersForUser = async (userId) => {
+  const items = await getOrderCollection();
+  return items.filter((item) => String(item.userId) === String(userId));
+};
+
+const saveOrderCollection = async (items) => {
+  if (authMode === 'mongo') {
+    await OrderModel.deleteMany({});
+    if (items.length > 0) {
+      await OrderModel.insertMany(items);
+    }
+    return;
+  }
+
+  await writeLocalCollection(ordersFile, items);
+};
+
+const replaceUserCartItems = async (userId, nextItems) => {
+  const allItems = await getCartCollection();
+  const remaining = allItems.filter((item) => String(item.userId) !== String(userId));
+  await saveCartCollection([...remaining, ...nextItems]);
+  return nextItems;
+};
+
+const updateUserCartItem = async (userId, cartItemId, updater) => {
+  const allItems = await getCartCollection();
+  const index = allItems.findIndex((item) => String(item.userId) === String(userId) && String(item.id ?? item._id) === String(cartItemId));
+  if (index === -1) {
+    return null;
+  }
+
+  const nextItem = updater(allItems[index]);
+  allItems[index] = nextItem;
+  await saveCartCollection(allItems);
+  return nextItem;
+};
+
+const removeUserCartItem = async (userId, cartItemId) => {
+  const allItems = await getCartCollection();
+  const nextItems = allItems.filter(
+    (item) => !(String(item.userId) === String(userId) && String(item.id ?? item._id) === String(cartItemId)),
+  );
+  const changed = nextItems.length !== allItems.length;
+  if (changed) {
+    await saveCartCollection(nextItems);
+  }
+
+  return changed;
+};
+
+const clearUserCartItems = async (userId) => {
+  const allItems = await getCartCollection();
+  const nextItems = allItems.filter((item) => String(item.userId) !== String(userId));
+  await saveCartCollection(nextItems);
+};
+
+const appendOrder = async (order) => {
+  const allOrders = await getOrderCollection();
+  allOrders.unshift(order);
+  await saveOrderCollection(allOrders);
+  return order;
+};
+
+const updateUserOrder = async (userId, orderId, updater) => {
+  const allOrders = await getOrderCollection();
+  const index = allOrders.findIndex((item) => String(item.userId) === String(userId) && String(item.id ?? item._id) === String(orderId));
+  if (index === -1) {
+    return null;
+  }
+
+  const nextOrder = updater(allOrders[index]);
+  allOrders[index] = nextOrder;
+  await saveOrderCollection(allOrders);
+  return nextOrder;
 };
 
 const buildAuthSession = (user) => ({
@@ -510,6 +782,283 @@ app.post('/api/books', async (req, res) => {
   res.status(500).json({
     message: 'Could not find a Supabase table to save the book',
   });
+});
+
+app.get('/api/cart', requireAuth, async (req, res) => {
+  try {
+    const items = await getCartItemsForUser(req.authUser.id ?? req.authUser._id);
+    res.json(items.map(toPublicCartItem));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to load cart',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.post('/api/cart/add', requireAuth, async (req, res) => {
+  try {
+    const bookId = String(req.body?.bookId ?? '').trim();
+    const quantity = Math.max(1, Number(req.body?.quantity ?? 1));
+    const bookSnapshot = req.body?.bookSnapshot ?? req.body?.book ?? null;
+
+    if (!bookId) {
+      res.status(400).json({ message: 'Book ID is required' });
+      return;
+    }
+
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const existingItem = (await getCartItemsForUser(userId)).find((item) => String(item.bookId) === bookId);
+    if (existingItem) {
+      res.json(toPublicCartItem(existingItem));
+      return;
+    }
+
+    const item = {
+      id: new mongoose.Types.ObjectId().toString(),
+      userId,
+      bookId,
+      quantity,
+      bookSnapshot: bookSnapshot ? normalizeSnapshotBook(bookSnapshot) : undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (authMode === 'mongo') {
+      const created = await CartModel.create(item);
+      res.status(201).json(toPublicCartItem(created.toObject()));
+      return;
+    }
+
+    await replaceUserCartItems(userId, [...(await getCartItemsForUser(userId)), item]);
+    res.status(201).json(toPublicCartItem(item));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to add book to cart',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.put('/api/cart/update', requireAuth, async (req, res) => {
+  try {
+    const cartItemId = String(req.body?.id ?? '').trim();
+    const quantity = Math.max(1, Number(req.body?.quantity ?? 1));
+
+    if (!cartItemId) {
+      res.status(400).json({ message: 'Cart item ID is required' });
+      return;
+    }
+
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const updated = await updateUserCartItem(userId, cartItemId, (item) => ({
+      ...item,
+      quantity,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    if (!updated) {
+      res.status(404).json({ message: 'Cart item not found' });
+      return;
+    }
+
+    res.json(toPublicCartItem(updated));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to update cart item',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.delete('/api/cart/remove/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const removed = await removeUserCartItem(userId, req.params.id);
+    if (!removed) {
+      res.status(404).json({ message: 'Cart item not found' });
+      return;
+    }
+
+    res.json({ message: 'Cart item removed successfully' });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to remove cart item',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.delete('/api/cart/clear', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    await clearUserCartItems(userId);
+    res.json({ message: 'Cart cleared successfully' });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to clear cart',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.get('/api/orders', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const orders = await getOrdersForUser(userId);
+    res.json(orders.map(toPublicOrder).sort((left, right) => new Date(right.orderedDate).getTime() - new Date(left.orderedDate).getTime()));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to load orders',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.get('/api/orders/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const orders = await getOrdersForUser(userId);
+    const order = orders.find((item) => String(item.id ?? item._id) === req.params.id);
+    if (!order) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    res.json(toPublicOrder(order));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to load order',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.post('/api/orders/create', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const books = Array.isArray(req.body?.books) ? req.body.books.map(normalizeOrderBook).filter((book) => book.bookId) : [];
+    const price = Number(req.body?.price ?? books.reduce((total, book) => total + book.price * book.quantity, 0));
+    const paymentMethod = String(req.body?.paymentMethod ?? 'UPI');
+    const deliveryAddress = normalizeOrderAddress(req.body?.deliveryAddress ?? {});
+    const sellerId = String(req.body?.sellerId ?? books[0]?.sellerId ?? 'multiple');
+    const selectedCartItemIds = Array.isArray(req.body?.selectedCartItemIds) ? req.body.selectedCartItemIds.map(String) : [];
+
+    if (books.length === 0) {
+      res.status(400).json({ message: 'At least one book is required to create an order' });
+      return;
+    }
+
+    if (!deliveryAddress.name || !deliveryAddress.phone || !deliveryAddress.line1 || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.pincode) {
+      res.status(400).json({ message: 'Delivery address is incomplete' });
+      return;
+    }
+
+    const order = {
+      id: new mongoose.Types.ObjectId().toString(),
+      userId,
+      books,
+      sellerId,
+      price,
+      paymentMethod,
+      status: 'Pending',
+      deliveryAddress,
+      orderedDate: new Date().toISOString(),
+      deliveredDate: null,
+      transactionId: `TXN-${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (authMode === 'mongo') {
+      const created = await OrderModel.create(order);
+      const publicOrder = toPublicOrder(created.toObject());
+      const userCart = await getCartItemsForUser(userId);
+      if (selectedCartItemIds.length > 0) {
+        await replaceUserCartItems(
+          userId,
+          userCart.filter((item) => !selectedCartItemIds.includes(String(item.id ?? item._id))),
+        );
+      } else {
+        await clearUserCartItems(userId);
+      }
+      res.status(201).json(publicOrder);
+      return;
+    }
+
+    await appendOrder(order);
+    const userCart = await getCartItemsForUser(userId);
+    if (selectedCartItemIds.length > 0) {
+      await replaceUserCartItems(
+        userId,
+        userCart.filter((item) => !selectedCartItemIds.includes(String(item.id ?? item._id))),
+      );
+    } else {
+      await clearUserCartItems(userId);
+    }
+
+    res.status(201).json(toPublicOrder(order));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to create order',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.put('/api/orders/cancel/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const updated = await updateUserOrder(userId, req.params.id, (order) => ({
+      ...order,
+      status: 'Cancelled',
+      updatedAt: new Date().toISOString(),
+    }));
+
+    if (!updated) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    res.json(toPublicOrder(updated));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to cancel order',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.put('/api/orders/status/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = String(req.authUser.id ?? req.authUser._id);
+    const status = String(req.body?.status ?? '').trim();
+    const allowedStatuses = ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Out For Delivery', 'Delivered', 'Cancelled', 'Completed'];
+
+    if (!allowedStatuses.includes(status)) {
+      res.status(400).json({ message: 'Invalid order status' });
+      return;
+    }
+
+    const updated = await updateUserOrder(userId, req.params.id, (order) => ({
+      ...order,
+      status,
+      deliveredDate: ['Delivered', 'Completed'].includes(status) ? new Date().toISOString() : order.deliveredDate,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    if (!updated) {
+      res.status(404).json({ message: 'Order not found' });
+      return;
+    }
+
+    res.json(toPublicOrder(updated));
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to update order status',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
 });
 
 const startServer = async () => {

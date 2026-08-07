@@ -11,15 +11,18 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
 
 type ApiOptions = RequestInit & {
   fallbackMessage?: string;
+  token?: string;
 };
 
 const requestJson = async <T>(path: string, options: ApiOptions = {}): Promise<T> => {
+  const { token, ...requestOptions } = options;
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {}),
     },
-    ...options,
+    ...requestOptions,
   });
 
   if (!response.ok) {
@@ -30,6 +33,8 @@ const requestJson = async <T>(path: string, options: ApiOptions = {}): Promise<T
 
   return response.json() as Promise<T>;
 };
+
+export const requestApiJson = requestJson;
 
 export const fetchBooks = async (): Promise<Book[]> => {
   try {

@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, BookOpen, Heart, MapPin, Search, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpen, Heart, MapPin, Search, ShoppingCart, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
+import { useMarketplace } from '../contexts/MarketplaceContext';
 import type { Book } from '../types';
+import { useNavigate } from 'react-router-dom';
 
 interface HomePageProps {
   books: Book[];
@@ -11,6 +13,16 @@ interface HomePageProps {
 const categories = ['Engineering', 'Diploma', 'Medical', 'Commerce', 'Arts', 'UPSC', 'JEE', 'NEET'];
 
 export const HomePage = ({ books }: HomePageProps) => {
+  const navigate = useNavigate();
+  const { addToCart, toggleWishlist, isInWishlist } = useMarketplace();
+  const handleAddToCart = async (book: Book) => {
+    try {
+      await addToCart(book);
+    } catch {
+      navigate('/login');
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
       <section className="rounded-[28px] border border-border bg-white p-4 shadow-soft sm:p-6">
@@ -130,7 +142,13 @@ export const HomePage = ({ books }: HomePageProps) => {
                       <h4 className="truncate text-lg font-semibold text-text">{book.title}</h4>
                       <p className="text-sm text-subtext">{book.author}</p>
                     </div>
-                    <button aria-label="Save book" className="rounded-full bg-bg p-2 text-subtext transition hover:text-primary">
+                    <button
+                      aria-label="Save book"
+                      onClick={() => toggleWishlist(book)}
+                      className={`rounded-full p-2 transition ${
+                        isInWishlist(book.id) ? 'bg-primary/10 text-primary' : 'bg-bg text-subtext hover:text-primary'
+                      }`}
+                    >
                       <Heart size={16} />
                     </button>
                   </div>
@@ -141,20 +159,38 @@ export const HomePage = ({ books }: HomePageProps) => {
                     <span className="rounded-full bg-secondary/10 px-2 py-1 text-secondary">{book.condition}</span>
                   </div>
 
-                  <div className="flex items-end justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-2xl font-semibold text-primary">Rs. {book.price}</p>
                       <p className="text-xs text-subtext">
                         {book.exchangeAvailable ? 'Exchange available' : 'Direct sale'}
                       </p>
                     </div>
-                    <Link
-                      to={`/book/${book.id}`}
-                      className="inline-flex items-center gap-1 rounded-2xl border border-border px-4 py-2 text-sm font-semibold text-text transition hover:border-primary hover:text-primary"
-                    >
-                      View
-                      <ArrowRight size={16} />
-                    </Link>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleWishlist(book)}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-2 text-sm font-semibold text-text transition hover:bg-bg"
+                      >
+                        <Heart size={16} />
+                        Wishlist
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddToCart(book)}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:scale-[1.01]"
+                      >
+                        <ShoppingCart size={16} />
+                        Add to Cart
+                      </button>
+                      <Link
+                        to={`/book/${book.id}`}
+                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border px-4 py-2 text-sm font-semibold text-text transition hover:border-primary hover:text-primary"
+                      >
+                        View Details
+                        <ArrowRight size={16} />
+                      </Link>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 text-sm text-subtext">

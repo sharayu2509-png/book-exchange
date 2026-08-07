@@ -1,7 +1,9 @@
 import { motion } from 'framer-motion';
-import { Heart, MapPin, MessageSquare, Share2, Bookmark, Star } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Heart, MapPin, MessageSquare, Share2, Bookmark, Star, ShoppingCart, Zap } from 'lucide-react';
+import { useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { EmptyState } from '../components/EmptyState';
+import { useMarketplace } from '../contexts/MarketplaceContext';
 import type { Book } from '../types';
 
 interface BookDetailsPageProps {
@@ -9,6 +11,15 @@ interface BookDetailsPageProps {
 }
 
 export const BookDetailsPage = ({ book }: BookDetailsPageProps) => {
+  const navigate = useNavigate();
+  const { addToCart, toggleWishlist, isInWishlist, recordRecentlyViewed } = useMarketplace();
+
+  useEffect(() => {
+    if (book) {
+      recordRecentlyViewed(book);
+    }
+  }, [book, recordRecentlyViewed]);
+
   if (!book) {
     return (
       <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
@@ -21,6 +32,37 @@ export const BookDetailsPage = ({ book }: BookDetailsPageProps) => {
       </div>
     );
   }
+
+  const handleAddToCart = async () => {
+    try {
+      await addToCart(book);
+    } catch {
+      navigate('/login');
+    }
+  };
+
+  const handleBuyNow = async () => {
+    try {
+      await addToCart(book);
+      navigate('/checkout');
+    } catch {
+      navigate('/login');
+    }
+  };
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      await navigator.share({
+        title: book.title,
+        text: `${book.title} by ${book.author}`,
+        url,
+      });
+      return;
+    }
+
+    await navigator.clipboard.writeText(url);
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
@@ -88,6 +130,22 @@ export const BookDetailsPage = ({ book }: BookDetailsPageProps) => {
                 </div>
 
                 <div className="mt-5 grid gap-3">
+                  <button
+                    type="button"
+                    onClick={handleAddToCart}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 font-semibold text-white transition hover:scale-[1.01]"
+                  >
+                    <ShoppingCart size={16} />
+                    Add to Cart
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBuyNow}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-secondary px-4 py-3 font-semibold text-white transition hover:scale-[1.01]"
+                  >
+                    <Zap size={16} />
+                    Buy Now
+                  </button>
                   <Link
                     to="/chat"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 font-semibold text-white transition hover:scale-[1.01]"
@@ -95,28 +153,50 @@ export const BookDetailsPage = ({ book }: BookDetailsPageProps) => {
                     <MessageSquare size={16} />
                     Chat Seller
                   </Link>
-                  <button className="rounded-2xl border border-border bg-white px-4 py-3 font-semibold text-text transition hover:bg-white">
+                  <Link
+                    to="/chat"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 font-semibold text-text transition hover:bg-white"
+                  >
                     Call Seller
-                  </button>
-                  <button className="rounded-2xl border border-border bg-white px-4 py-3 font-semibold text-text transition hover:bg-white">
+                  </Link>
+                  <Link
+                    to="/chat"
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 font-semibold text-text transition hover:bg-white"
+                  >
                     Exchange Request
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <button className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 transition hover:bg-bg">
+              <button
+                type="button"
+                onClick={() => toggleWishlist(book)}
+                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-3 transition ${
+                  isInWishlist(book.id)
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-white text-text hover:bg-bg'
+                }`}
+              >
                 <Bookmark size={16} />
                 Bookmark
               </button>
-              <button className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 transition hover:bg-bg">
+              <button
+                type="button"
+                onClick={handleShare}
+                className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 transition hover:bg-bg"
+              >
                 <Share2 size={16} />
                 Share
               </button>
-              <button className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 transition hover:bg-bg">
+              <button
+                type="button"
+                onClick={() => toggleWishlist(book)}
+                className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 transition hover:bg-bg"
+              >
                 <Heart size={16} />
-                Save
+                {isInWishlist(book.id) ? 'Saved' : 'Save'}
               </button>
             </div>
           </div>

@@ -4,8 +4,10 @@ import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-do
 import { BottomNav } from './components/BottomNav';
 import { LoadingState } from './components/LoadingState';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { ToastViewport } from './components/ToastViewport';
 import { TopNav } from './components/TopNav';
 import { useAuth } from './contexts/AuthContext';
+import { useMarketplace } from './contexts/MarketplaceContext';
 import { books as seedBooks } from './data/books';
 import { createBook, fetchBooks } from './services/api';
 import type { Book } from './types';
@@ -17,6 +19,10 @@ import { HomePage } from './pages/HomePage';
 import { LibraryPage } from './pages/LibraryPage';
 import { MyBooksPage } from './pages/MyBooksPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { CartPage } from './pages/cart/CartPage';
+import { CheckoutPage } from './pages/checkout/CheckoutPage';
+import { OrderDetailsPage } from './pages/orders/OrderDetailsPage';
+import { OrdersPage } from './pages/orders/OrdersPage';
 import { UnauthorizedPage } from './pages/UnauthorizedPage';
 import { SellBookPage } from './pages/SellBookPage';
 
@@ -28,9 +34,22 @@ const BookDetailsRoute = ({ books }: { books: Book[] }) => {
   return <BookDetailsPage book={selectedBook} />;
 };
 
+const OrderDetailsRoute = () => {
+  const { id } = useParams();
+  const { orders } = useMarketplace();
+  const selectedOrder = orders.find((order) => String(order.id) === id);
+
+  return (
+    <ProtectedRoute>
+      <OrderDetailsPage order={selectedOrder} />
+    </ProtectedRoute>
+  );
+};
+
 const AppRoutes = () => {
   const location = useLocation();
   const { isLoading } = useAuth();
+  const { isLoading: marketplaceLoading } = useMarketplace();
   const [allBooks, setAllBooks] = useState<Book[]>(seedBooks);
 
   useEffect(() => {
@@ -67,12 +86,13 @@ const AppRoutes = () => {
 
   const showAuthNav = !AUTH_ROUTES.includes(location.pathname);
 
-  if (isLoading) {
+  if (isLoading || marketplaceLoading) {
     return <LoadingState label="Restoring your session..." />;
   }
 
   return (
     <div className="min-h-screen bg-bg text-text">
+      <ToastViewport />
       {showAuthNav ? <TopNav /> : null}
 
       <AnimatePresence mode="wait">
@@ -89,6 +109,14 @@ const AppRoutes = () => {
             <Route path="/signup" element={<AuthPage type="signup" />} />
             <Route path="/home" element={<HomePage books={allBooks} />} />
             <Route path="/library" element={<LibraryPage books={allBooks} />} />
+            <Route
+              path="/cart"
+              element={
+                <ProtectedRoute>
+                  <CartPage books={allBooks} />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/sell"
               element={
@@ -113,6 +141,23 @@ const AppRoutes = () => {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/checkout"
+              element={
+                <ProtectedRoute>
+                  <CheckoutPage books={allBooks} />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/orders"
+              element={
+                <ProtectedRoute>
+                  <OrdersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/orders/:id" element={<OrderDetailsRoute />} />
             <Route
               path="/chat"
               element={

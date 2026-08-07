@@ -1,7 +1,9 @@
 import { motion } from 'framer-motion';
-import { Bookmark, BookOpen, Download, Filter, Search } from 'lucide-react';
+import { Bookmark, BookOpen, Filter, Search, ShoppingCart } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState';
+import { useMarketplace } from '../contexts/MarketplaceContext';
 import type { Book } from '../types';
+import { useNavigate } from 'react-router-dom';
 
 interface LibraryPageProps {
   books: Book[];
@@ -10,6 +12,16 @@ interface LibraryPageProps {
 const filters = ['All', 'Purchased', 'Downloaded', 'Wishlist', 'Saved'];
 
 export const LibraryPage = ({ books }: LibraryPageProps) => {
+  const navigate = useNavigate();
+  const { addToCart, toggleWishlist, isInWishlist } = useMarketplace();
+  const handleAddToCart = async (book: Book) => {
+    try {
+      await addToCart(book);
+    } catch {
+      navigate('/login');
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8 lg:pb-10">
       <section className="rounded-[28px] border border-border bg-white p-4 shadow-soft sm:p-6">
@@ -95,12 +107,29 @@ export const LibraryPage = ({ books }: LibraryPageProps) => {
                 <div className="font-semibold text-primary">Rs. {book.price}</div>
               </div>
 
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <button className="flex-1 rounded-2xl bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:scale-[1.01]">
-                  Open
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => toggleWishlist(book)}
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
+                    isInWishlist(book.id)
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-white text-text hover:bg-bg'
+                  }`}
+                >
+                  <Bookmark size={16} />
+                  Wishlist
                 </button>
-                <button className="inline-flex items-center justify-center rounded-2xl border border-border px-3 py-2 text-sm font-semibold text-text transition hover:bg-bg">
-                  <Download size={16} />
+                <button
+                  type="button"
+                  onClick={() => handleAddToCart(book)}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:scale-[1.01]"
+                >
+                  <ShoppingCart size={16} />
+                  Add to Cart
+                </button>
+                <button className="rounded-2xl border border-border px-3 py-2 text-sm font-semibold text-text transition hover:bg-bg">
+                  Open
                 </button>
               </div>
             </motion.article>

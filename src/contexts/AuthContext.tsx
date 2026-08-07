@@ -24,6 +24,31 @@ interface LocalUser extends User {
   password: string;
 }
 
+const DEMO_USERS: LocalUser[] = [
+  {
+    id: 'demo-user-1',
+    name: 'Ananya Sharma',
+    email: 'ananya@bookexchange.test',
+    college: 'IIT Delhi',
+    branch: 'Computer Science',
+    semester: '3rd',
+    phone: '9999999001',
+    avatarUrl: 'https://api.dicebear.com/7.x/thumbs/svg?seed=Ananya%20Sharma',
+    password: 'Password123',
+  },
+  {
+    id: 'demo-user-2',
+    name: 'Rohit Verma',
+    email: 'rohit@bookexchange.test',
+    college: 'Delhi University',
+    branch: 'Commerce',
+    semester: '4th',
+    phone: '9999999002',
+    avatarUrl: 'https://api.dicebear.com/7.x/thumbs/svg?seed=Rohit%20Verma',
+    password: 'Password123',
+  },
+];
+
 const readStoredSession = (): AuthSession | null => {
   if (typeof window === 'undefined') {
     return null;
@@ -48,9 +73,16 @@ const readLocalUsers = (): LocalUser[] => {
 
   try {
     const raw = window.localStorage.getItem(LOCAL_USERS_KEY);
-    return raw ? (JSON.parse(raw) as LocalUser[]) : [];
+    const users = raw ? (JSON.parse(raw) as LocalUser[]) : [];
+    if (users.length === 0) {
+      window.localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(DEMO_USERS));
+      return DEMO_USERS;
+    }
+
+    return users;
   } catch {
-    return [];
+    window.localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(DEMO_USERS));
+    return DEMO_USERS;
   }
 };
 

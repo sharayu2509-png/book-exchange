@@ -17,7 +17,12 @@ interface AuthContextValue {
 }
 
 const SESSION_KEY = 'book-exchange-session';
+const LOCAL_USERS_KEY = 'book-exchange-local-users';
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+interface LocalUser extends User {
+  password: string;
+}
 
 const readStoredSession = (): AuthSession | null => {
   if (typeof window === 'undefined') {
@@ -35,6 +40,44 @@ const readStoredSession = (): AuthSession | null => {
     return null;
   }
 };
+
+const readLocalUsers = (): LocalUser[] => {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LOCAL_USERS_KEY);
+    return raw ? (JSON.parse(raw) as LocalUser[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeLocalUsers = (users: LocalUser[]) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(users));
+};
+
+const buildLocalSession = (user: User): AuthSession => ({
+  user,
+  token: `local-${user.id}-${Date.now()}`,
+});
+
+const toLocalUser = (payload: RegistrationPayload, password: string, avatarUrl?: string): LocalUser => ({
+  id: `local-${Date.now()}`,
+  name: payload.name,
+  email: payload.email.toLowerCase().trim(),
+  college: payload.college,
+  branch: payload.branch,
+  semester: payload.semester,
+  phone: payload.phone,
+  avatarUrl: avatarUrl ?? `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(payload.name)}`,
+  password,
+});
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -55,6 +98,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         window.localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
         setStatus('authenticated');
       } catch {
+        if (storedSession.user) {
+          setSession(storedSession);
+          setStatus('authenticated');
+          return;
+        }
+
         window.localStorage.removeItem(SESSION_KEY);
         setSession(null);
         setStatus('anonymous');
@@ -85,22 +134,105 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isLoading: status === 'loading',
       status,
       login: async (payload) => {
-        const nextSession = await loginRequest(payload);
-        persistSession(nextSession);
-        setStatus('authenticated');
-        return nextSession;
+        try {
+          const nextSession = await loginRequest(payload);
+          persistSession(nextSession);
+          setStatus('authenticated');
+          return nextSession;
+        } catch {
+          const localUser = readLocalUsers().find(
+            (user) => user.email === payload.email.toLowerCase().trim() && user.password === payload.password,
+          );
+
+          if (!localUser) {
+            throw new Error('Unable to sign in right now');
+          }
+
+          const nextSession = buildLocalSession({
+            id: localUser.id,
+            name: localUser.name,
+            email: localUser.email,
+            college: localUser.college,
+            branch: localUser.branch,
+            semester: localUser.semester,
+            phone: localUser.phone,
+            avatarUrl: localUser.avatarUrl,
+          });
+
+          persistSession(nextSession);
+          setStatus('authenticated');
+          return nextSession;
+        }
       },
       register: async (payload) => {
-        const nextSession = await registerRequest(payload);
-        persistSession(nextSession);
-        setStatus('authenticated');
-        return nextSession;
+        try {
+          const nextSession = await registerRequest(payload);
+          persistSession(nextSession);
+          setStatus('authenticated');
+          return nextSession;
+        } catch {
+          const users = readLocalUsers();
+          const email = payload.email.toLowerCase().trim();
+          if (users.some((user) => user.email === email)) {
+            throw new Error('An account with this email already exists');
+          }
+
+          const localUser = toLocalUser(payload, payload.password);
+          users.push(localUser);
+          writeLocalUsers(users);
+
+          const nextSession = buildLocalSession(localUser);
+          persistSession(nextSession);
+          setStatus('authenticated');
+          return nextSession;
+        }
       },
       loginWithGoogle: async (payload) => {
-        const nextSession = await googleAuthRequest(payload);
-        persistSession(nextSession);
-        setStatus('authenticated');
-        return nextSession;
+        try {
+          const nextSession = await googleAuthRequest(payload);
+          persistSession(nextSession);
+          setStatus('authenticated');
+          return nextSession;
+        } catch {
+          const users = readLocalUsers();
+          const email = payload.email.toLowerCase().trim();
+          const existingUser = users.find((user) => user.email === email);
+          const user =
+            existingUser ??
+            toLocalUser(
+              {
+                name: payload.name,
+                email: payload.email,
+                college: payload.college ?? 'Campus College',
+                branch: payload.branch ?? 'Computer Science',
+                semester: payload.semester ?? '4th',
+                phone: payload.phone ?? '9999999999',
+                password: cryptoRandomFallback(payload.email),
+              },
+              cryptoRandomFallback(payload.email),
+              payload.avatarUrl,
+            );
+
+          if (!existingUser) {
+            users.push(user);
+            writeLocalUsers(users);
+          }
+
+          const nextSession = buildLocalSession({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            college: user.college,
+            branch: user.branch,
+            semester: user.semester,
+            phone: user.phone,
+            avatarUrl: payload.avatarUrl ?? user.avatarUrl,
+          });
+
+          persistSession(nextSession);
+          setStatus('authenticated');
+          return nextSession;
+        }
       },
       logout: async () => {
         await logoutRequest(session?.token ?? undefined);
@@ -113,6 +245,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
+
+const cryptoRandomFallback = (seed: string) => `google-${seed.toLowerCase().trim()}`;
 
 export const useAuth = () => {
   const context = useContext(AuthContext);

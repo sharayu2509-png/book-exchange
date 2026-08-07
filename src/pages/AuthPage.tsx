@@ -12,7 +12,7 @@ import {
   Sparkles,
   User,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useEffect, useMemo, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -473,18 +473,30 @@ type AuthFieldProps = InputHTMLAttributes<HTMLInputElement> & {
   trailing?: ReactNode;
 };
 
-function AuthField({ icon, error, trailing, className, ...props }: AuthFieldProps) {
+const AuthField = forwardRef<HTMLInputElement, AuthFieldProps>(function AuthField(
+  { icon, error, trailing, className, ...props },
+  ref,
+) {
   return (
     <label className="space-y-2">
-      <div className={`flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 transition ${error ? 'border-error' : 'border-border focus-within:border-primary'} ${className ?? ''}`}>
+      <div
+        className={`flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 transition ${
+          error ? 'border-error' : 'border-border focus-within:border-primary'
+        } ${className ?? ''}`}
+      >
         <span className="text-primary">{icon}</span>
-        <input {...props} className="w-full bg-transparent text-sm outline-none placeholder:text-subtext/70" />
+        <input
+          ref={ref}
+          {...props}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-subtext/70"
+        />
         {trailing}
       </div>
       {error ? <p className="text-sm text-error">{error}</p> : null}
     </label>
   );
-}
+});
+AuthField.displayName = 'AuthField';
 
 type PasswordFieldProps = Omit<AuthFieldProps, 'icon' | 'type'> & {
   register: (...args: any[]) => any;

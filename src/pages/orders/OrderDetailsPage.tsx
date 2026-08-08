@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { CalendarDays, CheckCircle2, Download, Phone, Route, Send, ShieldCheck, User2 } from 'lucide-react';
+import { CalendarDays, Download, Phone, Route, Send, ShieldCheck, User2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -23,7 +23,6 @@ export const OrderDetailsPage = ({ order }: OrderDetailsPageProps) => {
   const { showToast } = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [cancelSuccess, setCancelSuccess] = useState(false);
 
   if (!order) {
     return (
@@ -90,7 +89,7 @@ export const OrderDetailsPage = ({ order }: OrderDetailsPageProps) => {
     URL.revokeObjectURL(url);
   };
 
-  const canCancel = !['Cancelled', 'Delivered', 'Completed'].includes(order.status);
+  const canCancel = ['Pending', 'Confirmed', 'Packed'].includes(order.status);
 
   const confirmCancel = async () => {
     if (!order || !canCancel) {
@@ -100,17 +99,12 @@ export const OrderDetailsPage = ({ order }: OrderDetailsPageProps) => {
     setCancelLoading(true);
     try {
       await cancelOrderById(order.id);
-      setCancelSuccess(true);
       showToast({
-        title: 'Order Cancelled Successfully',
+        title: 'Order cancelled successfully.',
         description: 'Your order has been cancelled successfully.',
         variant: 'success',
       });
-      window.setTimeout(() => {
-        setConfirmOpen(false);
-        setCancelSuccess(false);
-        window.location.reload();
-      }, 1200);
+      setConfirmOpen(false);
     } catch (error) {
       showToast({
         title: 'Error',
@@ -284,48 +278,30 @@ export const OrderDetailsPage = ({ order }: OrderDetailsPageProps) => {
 
       <Modal
         open={confirmOpen}
-        onClose={() => {
-          setConfirmOpen(false);
-          setCancelSuccess(false);
-        }}
-        title={cancelSuccess ? 'Order Cancelled Successfully' : 'Cancel this order?'}
-        description={
-          cancelSuccess
-            ? 'Your order has been cancelled successfully.'
-            : 'Are you sure you want to cancel this order? This action cannot be undone.'
-        }
+        onClose={() => setConfirmOpen(false)}
+        title="Cancel this order?"
+        description="Are you sure you want to cancel this order? This action cannot be undone."
         footer={
-          cancelSuccess ? null : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <LoadingButton
-                type="button"
-                onClick={() => setConfirmOpen(false)}
-                className="w-full border border-border bg-white px-4 py-3 font-semibold text-text"
-              >
-                Keep Order
-              </LoadingButton>
-              <LoadingButton
-                type="button"
-                onClick={confirmCancel}
-                isLoading={cancelLoading}
-                className="w-full bg-error px-4 py-3 font-semibold text-white"
-              >
-                Cancel Order
-              </LoadingButton>
-            </div>
-          )
+          <div className="grid gap-3 sm:grid-cols-2">
+            <LoadingButton
+              type="button"
+              onClick={() => setConfirmOpen(false)}
+              className="w-full border border-border bg-white px-4 py-3 font-semibold text-text"
+            >
+              Keep Order
+            </LoadingButton>
+            <LoadingButton
+              type="button"
+              onClick={confirmCancel}
+              isLoading={cancelLoading}
+              className="w-full bg-error px-4 py-3 font-semibold text-white"
+            >
+              Cancel Order
+            </LoadingButton>
+          </div>
         }
       >
-        {cancelSuccess ? (
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-              <CheckCircle2 size={28} />
-            </div>
-            <div>
-              <p className="text-sm text-subtext">The order status has been updated in the database.</p>
-            </div>
-          </div>
-        ) : null}
+        <p className="text-sm text-subtext">This will mark the order as cancelled in your account and order history.</p>
       </Modal>
     </div>
   );

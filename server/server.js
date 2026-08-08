@@ -406,7 +406,7 @@ const normalizeOrderBook = (book = {}) => ({
 });
 
 const paymentMethods = ['Cash on Delivery', 'UPI', 'Credit Card', 'Debit Card', 'Net Banking'];
-const cancellableStatuses = ['Pending', 'Confirmed', 'Packed', 'Shipped'];
+const cancellableStatuses = ['Pending', 'Confirmed', 'Packed'];
 
 const toPublicCartItem = (item) => ({
   id: String(item.id ?? item._id),

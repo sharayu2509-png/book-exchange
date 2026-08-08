@@ -218,7 +218,7 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
             cartItems: [...current.cartItems, createdItem],
           }));
           showToast({
-            title: 'Added to cart',
+            title: 'Book added to cart.',
             description: `${book.title} is now ready for checkout.`,
             variant: 'success',
           });
@@ -252,7 +252,7 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
             ],
           }));
           showToast({
-            title: 'Added to cart',
+            title: 'Book added to cart.',
             description: `${book.title} was saved locally for checkout.`,
             variant: 'success',
           });
@@ -287,7 +287,7 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
             cartItems: current.cartItems.filter((item) => String(item.id) !== String(cartItemId)),
           }));
           showToast({
-            title: 'Removed from cart',
+            title: 'Book removed from cart.',
             description: 'The book has been removed from your cart.',
             variant: 'info',
           });
@@ -300,7 +300,7 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
           cartItems: current.cartItems.filter((item) => String(item.id) !== String(cartItemId)),
         }));
         showToast({
-          title: 'Removed from cart',
+          title: 'Book removed from cart.',
           description: 'The book has been removed from your cart.',
           variant: 'info',
         });
@@ -323,7 +323,7 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
             : [...current.wishlist, normalizeBook(book)],
         }));
         showToast({
-          title: 'Moved to wishlist',
+          title: 'Book added to wishlist.',
           description: `${book.title} has been saved for later.`,
           variant: 'success',
         });
@@ -339,7 +339,7 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
           };
         });
         showToast({
-          title: 'Wishlist updated',
+          title: exists ? 'Book removed from wishlist.' : 'Book added to wishlist.',
           description: `${book.title} has been ${exists ? 'removed from' : 'added to'} your wishlist.`,
           variant: 'info',
         });
@@ -396,13 +396,6 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
             (item) => !selectedCartItemIds?.length || !selectedCartItemIds.includes(item.id),
           ),
         }));
-
-        showToast({
-          title: 'Order placed',
-          description: `Your order ${order.transactionId} is being processed.`,
-          variant: 'success',
-        });
-
         return order;
       },
       cancelOrderById: async (orderId) => {
@@ -413,11 +406,6 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
               String(order.id) === String(orderId) ? { ...order, status: 'Cancelled' } : order,
             ),
           }));
-          showToast({
-            title: 'Order cancelled',
-            description: 'Your order was cancelled successfully.',
-            variant: 'info',
-          });
           return;
         }
 
@@ -426,11 +414,6 @@ export const MarketplaceProvider = ({ children }: { children: ReactNode }) => {
           ...current,
           orders: current.orders.map((order) => (String(order.id) === String(orderId) ? updated : order)),
         }));
-        showToast({
-          title: 'Order cancelled',
-          description: 'Your order was cancelled successfully.',
-          variant: 'info',
-        });
       },
       setOrderStatus: async (orderId, status) => {
         if (!token) {

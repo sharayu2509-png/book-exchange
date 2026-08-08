@@ -20,8 +20,8 @@ export const TopNav = () => {
   const authLabel = useMemo(() => (isAuthenticated ? user?.name ?? 'Account' : 'Login'), [isAuthenticated, user]);
 
   return (
-    <header className="sticky top-0 z-30 hidden border-b border-border bg-white/90 backdrop-blur md:block">
-      <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-30 hidden border-b border-border bg-white/90 backdrop-blur lg:block">
+      <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6 lg:px-8">
         <Link to="/home" className="flex items-center gap-3">
           <div className="rounded-2xl bg-primary/10 p-3 text-primary">
             <BookOpen size={20} />
@@ -32,33 +32,35 @@ export const TopNav = () => {
           </div>
         </Link>
 
-        <nav className="flex flex-1 items-center justify-center gap-2">
+        <nav className="flex flex-1 items-center justify-center gap-1.5">
           {items.map(({ to, label, icon: Icon }) => {
             const badgeValue = to === '/cart' ? cartCount : to === '/orders' ? orderCount : 0;
             return (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 ${isActive ? 'bg-primary/10 text-primary' : 'text-subtext hover:bg-bg hover:text-text'}`
-              }
-            >
-              <span className="relative inline-flex items-center gap-2">
-                <Icon size={16} />
-                {label}
-                {badgeValue > 0 ? (
-                  <span className="ml-1 inline-flex min-w-5 justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    {badgeValue}
-                  </span>
-                ) : null}
-              </span>
-            </NavLink>
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  `inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-all duration-200 ${
+                    isActive ? 'bg-primary/10 text-primary' : 'text-subtext hover:bg-bg hover:text-text'
+                  }`
+                }
+              >
+                <span className="relative inline-flex items-center gap-2">
+                  <Icon size={16} />
+                  {label}
+                  {badgeValue > 0 ? (
+                    <span className="ml-1 inline-flex min-w-5 justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {badgeValue}
+                    </span>
+                  ) : null}
+                </span>
+              </NavLink>
             );
           })}
         </nav>
 
         <div className="flex items-center gap-3">
-          <div className="hidden rounded-full bg-bg px-4 py-2 text-sm text-subtext lg:block">
+          <div className="hidden rounded-full bg-bg px-4 py-2 text-sm text-subtext xl:block">
             {isAuthenticated ? `Welcome, ${user?.name ?? 'student'}` : 'Study smart, spend less'}
           </div>
           <Link

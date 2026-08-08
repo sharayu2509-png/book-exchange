@@ -2,20 +2,32 @@ import { z } from 'zod';
 
 const paymentMethodValues = ['Cash on Delivery', 'UPI', 'Credit Card', 'Debit Card', 'Net Banking'] as const;
 
+const requiredText = (message: string, minLength = 1) =>
+  z.preprocess((value) => (typeof value === 'string' ? value : ''), z.string().trim().min(minLength, message));
+
 export const checkoutSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(3, 'Full Name must be at least 3 characters')
-    .regex(/^(?!\s+$).+$/, 'Full Name is required'),
-  phone: z.string().trim().regex(/^\d{10}$/, 'Phone number must contain exactly 10 digits'),
-  line1: z.string().trim().min(5, 'Address Line 1 is required'),
-  line2: z.string().optional().or(z.literal('')),
-  city: z.string().trim().min(2, 'City is required').regex(/^(?!\s+$).+$/, 'City is required'),
-  state: z.string().trim().min(2, 'State is required').regex(/^(?!\s+$).+$/, 'State is required'),
-  pincode: z.string().trim().regex(/^\d{6}$/, 'Pincode must contain exactly 6 digits'),
-  college: z.string().trim().min(2, 'College is required').regex(/^(?!\s+$).+$/, 'College is required'),
-  paymentMethod: z.enum(paymentMethodValues),
+  fullName: requiredText('Please enter your full name.', 3),
+  phoneNumber: z.preprocess(
+    (value) => (typeof value === 'string' ? value : ''),
+    z.string().trim().regex(/^\d{10}$/, 'Please enter a valid 10-digit phone number.'),
+  ),
+  addressLine1: requiredText('Please enter your address.'),
+  addressLine2: z.preprocess((value) => (value === '' || value == null ? undefined : value), z.string().trim().optional()),
+  city: requiredText('Please enter your city.', 2),
+  state: requiredText('Please enter your state.', 2),
+  pincode: z.preprocess(
+    (value) => (typeof value === 'string' ? value : ''),
+    z.string().trim().regex(/^\d{6}$/, 'Please enter a valid 6-digit pincode.'),
+  ),
+  college: requiredText('Please enter your college.', 2),
+  paymentMethod: z.preprocess(
+    (value) => (typeof value === 'string' ? value : ''),
+    z
+      .string()
+      .trim()
+      .min(1, 'Please select a payment method.')
+      .refine((value) => paymentMethodValues.includes(value as (typeof paymentMethodValues)[number]), 'Please select a payment method.'),
+  ),
 });
 
 export type CheckoutSchemaValues = z.infer<typeof checkoutSchema>;

@@ -103,7 +103,7 @@ const AppRoutes = () => {
   }
 
   return (
-    <div className="min-h-screen bg-bg text-text">
+    <div className="min-h-screen bg-bg text-text pb-24 lg:pb-0">
       <ToastHost />
       {showAuthNav ? <TopNav /> : null}
 

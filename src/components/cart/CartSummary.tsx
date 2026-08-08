@@ -1,3 +1,5 @@
+import { LoadingButton } from '../ui/LoadingButton';
+
 interface CartSummaryProps {
   subtotal: number;
   platformFee: number;
@@ -6,6 +8,8 @@ interface CartSummaryProps {
   onContinueShopping: () => void;
   onCheckout: () => void;
   checkoutLabel?: string;
+  checkoutDisabled?: boolean;
+  checkoutLoading?: boolean;
 }
 
 export const CartSummary = ({
@@ -16,6 +20,8 @@ export const CartSummary = ({
   onContinueShopping,
   onCheckout,
   checkoutLabel = 'Proceed to Checkout',
+  checkoutDisabled = false,
+  checkoutLoading = false,
 }: CartSummaryProps) => {
   return (
     <aside className="rounded-[28px] border border-border bg-white p-5 shadow-soft sm:p-6">
@@ -37,13 +43,15 @@ export const CartSummary = ({
         >
           Continue Shopping
         </button>
-        <button
+        <LoadingButton
           type="button"
           onClick={onCheckout}
-          className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:scale-[1.01]"
+          disabled={checkoutDisabled}
+          isLoading={checkoutLoading}
+          className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:scale-[1.01] disabled:bg-gray-300 disabled:text-gray-600"
         >
           {checkoutLabel}
-        </button>
+        </LoadingButton>
       </div>
     </aside>
   );
@@ -55,4 +63,3 @@ const SummaryRow = ({ label, value, highlight }: { label: string; value: number;
     <span className={highlight ? 'text-primary' : 'text-text'}>Rs. {value}</span>
   </div>
 );
-

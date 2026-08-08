@@ -16,7 +16,7 @@ export const OrderCard = ({ order, onCancel, onReorder, onDownloadInvoice }: Ord
   const firstBook = order.books[0];
   const displayDate = new Date(order.orderedDate).toLocaleDateString();
   const deliveryDate = order.deliveredDate ? new Date(order.deliveredDate).toLocaleDateString() : 'Within 5-7 days';
-  const canCancel = !['Cancelled', 'Delivered', 'Completed'].includes(order.status);
+  const canCancel = ['Pending', 'Confirmed', 'Packed'].includes(order.status);
 
   return (
     <motion.article

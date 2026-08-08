@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { CheckCircle2, CreditCard, MapPinned, PackageCheck, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router-dom';
 import { CartSummary } from '../../components/cart/CartSummary';
@@ -9,7 +9,6 @@ import { EmptyState } from '../../components/EmptyState';
 import { FormField } from '../../components/ui/FormInput';
 import { LoadingButton } from '../../components/ui/LoadingButton';
 import { Modal } from '../../components/ui/Modal';
-import { useAuth } from '../../contexts/AuthContext';
 import { useMarketplace } from '../../contexts/MarketplaceContext';
 import { useToast } from '../../contexts/ToastContext';
 import type { Book, PaymentMethod } from '../../types';
@@ -28,7 +27,6 @@ type ResultState =
 
 export const CheckoutPage = ({ books }: CheckoutPageProps) => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { cartItems, createOrderFromCart, clearCart, isLoading } = useMarketplace();
   const { showToast } = useToast();
   const successTimerRef = useRef<number | null>(null);
@@ -59,33 +57,33 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
   } = useForm<CheckoutSchemaValues>({
     mode: 'onChange',
     reValidateMode: 'onChange',
-    resolver: zodResolver(checkoutSchema),
+    resolver: zodResolver(checkoutSchema) as Resolver<CheckoutSchemaValues>,
     defaultValues: {
-      name: user?.name ?? '',
-      phone: user?.phone ?? '',
-      line1: '',
-      line2: '',
-      city: user?.college ?? '',
+      fullName: '',
+      phoneNumber: '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
       state: '',
       pincode: '',
-      college: user?.college ?? '',
-      paymentMethod: 'UPI',
+      college: '',
+      paymentMethod: '',
     },
   });
 
   useEffect(() => {
     reset({
-      name: user?.name ?? '',
-      phone: user?.phone ?? '',
-      line1: '',
-      line2: '',
-      city: user?.college ?? '',
+      fullName: '',
+      phoneNumber: '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
       state: '',
       pincode: '',
-      college: user?.college ?? '',
-      paymentMethod: 'UPI',
+      college: '',
+      paymentMethod: '',
     });
-  }, [reset, user?.college, user?.name, user?.phone]);
+  }, [reset]);
 
   useEffect(() => {
     return () => {
@@ -106,11 +104,11 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
   const openSuccess = () => {
     setResult({
       type: 'success',
-      title: 'Order Placed Successfully',
+      title: 'Order placed successfully.',
       description: 'Your order has been placed successfully.',
     });
     showToast({
-      title: 'Order Placed',
+      title: 'Order placed successfully.',
       description: 'Your order has been placed successfully.',
       variant: 'success',
     });
@@ -144,12 +142,12 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
     try {
       await createOrderFromCart({
         books: resolvedBooks.map(({ book, item }) => ({ book, quantity: item.quantity })),
-        paymentMethod: values.paymentMethod,
+        paymentMethod: values.paymentMethod as PaymentMethod,
         deliveryAddress: {
-          name: values.name,
-          phone: values.phone,
-          line1: values.line1,
-          line2: values.line2,
+          name: values.fullName,
+          phone: values.phoneNumber,
+          line1: values.addressLine1,
+          line2: values.addressLine2,
           city: values.city,
           state: values.state,
           pincode: values.pincode,
@@ -236,17 +234,17 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
                 required
                 placeholder="Enter your full name"
                 aria-label="Full Name"
-                error={errors.name?.message}
-                {...register('name')}
+                error={errors.fullName?.message}
+                {...register('fullName')}
               />
               <FormField
                 label="Phone Number"
                 required
                 placeholder="10-digit mobile number"
                 aria-label="Phone Number"
-                error={errors.phone?.message}
+                error={errors.phoneNumber?.message}
                 inputMode="numeric"
-                {...register('phone')}
+                {...register('phoneNumber')}
               />
               <FormField
                 as="textarea"
@@ -255,9 +253,9 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
                 placeholder="House / hostel / room details"
                 aria-label="Address Line 1"
                 wrapperClassName="md:col-span-2"
-                error={errors.line1?.message}
+                error={errors.addressLine1?.message}
                 rows={3}
-                {...register('line1')}
+                {...register('addressLine1')}
               />
               <FormField
                 as="textarea"
@@ -267,8 +265,8 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
                 wrapperClassName="md:col-span-2"
                 helperText="Optional"
                 rows={3}
-                error={errors.line2?.message}
-                {...register('line2')}
+                error={errors.addressLine2?.message}
+                {...register('addressLine2')}
               />
               <FormField
                 label="City"
@@ -345,8 +343,8 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
           <LoadingButton
             type="submit"
             isLoading={isSubmittingOrder || isSubmitting}
-            disabled={!isValid || resolvedBooks.length === 0}
-            className="w-full bg-primary px-4 py-4 text-base font-semibold text-white hover:shadow-lg"
+            disabled={!isValid || resolvedBooks.length === 0 || isSubmittingOrder || isSubmitting}
+            className="w-full bg-primary px-4 py-4 text-base font-semibold text-white transition hover:shadow-lg disabled:bg-gray-300 disabled:text-gray-600"
           >
             Place Order
           </LoadingButton>
@@ -360,6 +358,8 @@ export const CheckoutPage = ({ books }: CheckoutPageProps) => {
             total={total}
             onContinueShopping={() => navigate('/library')}
             onCheckout={handleSubmit(onSubmit)}
+            checkoutDisabled={!isValid || resolvedBooks.length === 0 || isSubmittingOrder || isSubmitting}
+            checkoutLoading={isSubmittingOrder || isSubmitting}
             checkoutLabel={isSubmittingOrder || isSubmitting ? 'Placing Order...' : 'Place Order'}
           />
 

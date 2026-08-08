@@ -1,4 +1,4 @@
-import { CheckCircle2, FileDown, Search, ShoppingCart } from 'lucide-react';
+import { FileDown, Search, ShoppingCart } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { EmptyState } from '../../components/EmptyState';
@@ -18,17 +18,12 @@ export const OrdersPage = () => {
   const [query, setQuery] = useState('');
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [successOrderId, setSuccessOrderId] = useState<string | null>(null);
 
   const filteredOrders = useMemo(() => {
     const lowerQuery = query.toLowerCase().trim();
     return orders.filter((order) => {
       const matchesTab =
-        activeTab === 'All Orders'
-          ? true
-          : activeTab === 'Completed'
-            ? ['Delivered', 'Completed'].includes(order.status)
-            : order.status === activeTab;
+        activeTab === 'All Orders' ? true : order.status === activeTab;
 
       const searchable = [
         order.transactionId,
@@ -73,17 +68,12 @@ export const OrdersPage = () => {
     setCancelLoading(true);
     try {
       await cancelOrderById(cancelTarget.id);
-      setSuccessOrderId(String(cancelTarget.id));
       showToast({
-        title: 'Order Cancelled Successfully',
+        title: 'Order cancelled successfully.',
         description: 'Your order has been cancelled successfully.',
         variant: 'success',
       });
-      window.setTimeout(() => {
-        setCancelTarget(null);
-        setSuccessOrderId(null);
-        window.location.reload();
-      }, 1200);
+      setCancelTarget(null);
     } catch (error) {
       showToast({
         title: 'Error',
@@ -183,48 +173,30 @@ export const OrdersPage = () => {
 
       <Modal
         open={Boolean(cancelTarget)}
-        onClose={() => {
-          setCancelTarget(null);
-          setSuccessOrderId(null);
-        }}
-        title={successOrderId ? 'Order Cancelled Successfully' : 'Cancel this order?'}
-        description={
-          successOrderId
-            ? 'Your order has been cancelled successfully.'
-            : 'Are you sure you want to cancel this order? This action cannot be undone.'
-        }
+        onClose={() => setCancelTarget(null)}
+        title="Cancel this order?"
+        description="Are you sure you want to cancel this order? This action cannot be undone."
         footer={
-          successOrderId ? null : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <LoadingButton
-                type="button"
-                onClick={() => setCancelTarget(null)}
-                className="w-full border border-border bg-white px-4 py-3 font-semibold text-text"
-              >
-                Keep Order
-              </LoadingButton>
-              <LoadingButton
-                type="button"
-                onClick={confirmCancel}
-                isLoading={cancelLoading}
-                className="w-full bg-error px-4 py-3 font-semibold text-white"
-              >
-                Cancel Order
-              </LoadingButton>
-            </div>
-          )
+          <div className="grid gap-3 sm:grid-cols-2">
+            <LoadingButton
+              type="button"
+              onClick={() => setCancelTarget(null)}
+              className="w-full border border-border bg-white px-4 py-3 font-semibold text-text"
+            >
+              Keep Order
+            </LoadingButton>
+            <LoadingButton
+              type="button"
+              onClick={confirmCancel}
+              isLoading={cancelLoading}
+              className="w-full bg-error px-4 py-3 font-semibold text-white"
+            >
+              Cancel Order
+            </LoadingButton>
+          </div>
         }
       >
-        {successOrderId ? (
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-              <CheckCircle2 size={28} />
-            </div>
-            <div>
-              <p className="text-sm text-subtext">The order status has been updated in the database.</p>
-            </div>
-          </div>
-        ) : null}
+        <p className="text-sm text-subtext">This will mark the order as cancelled in your account and order history.</p>
       </Modal>
     </div>
   );
